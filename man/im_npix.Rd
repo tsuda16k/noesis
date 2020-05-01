@@ -9,6 +9,9 @@ im_npix(im)
 \arguments{
 \item{im}{an image}
 }
+\value{
+total number of pixels
+}
 \description{
 Total number of pixels of an image
 }

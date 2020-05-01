@@ -15,3 +15,6 @@ logical. if an object is a nimg object.
 \description{
 Check if an object is a nimg object
 }
+\examples{
+is.nimg(regatta)
+}

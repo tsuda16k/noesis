@@ -18,6 +18,7 @@ Imports:
     png,
     readbitmap,
     stringr,
-    downloader
+    downloader,
+    imager
 Depends: 
     R (>= 2.10)

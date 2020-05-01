@@ -9,6 +9,9 @@ im_nchannel(im)
 \arguments{
 \item{im}{an image}
 }
+\value{
+the number of color channel
+}
 \description{
 The number of color channel of an image
 }

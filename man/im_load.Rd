@@ -4,10 +4,12 @@
 \alias{im_load}
 \title{Load image from file or URL}
 \usage{
-im_load(file)
+im_load(file, name)
 }
 \arguments{
 \item{file}{path to file or URL}
+
+\item{name}{a string for name attribute. if missing, inffered from the file argument.}
 }
 \value{
 an array of image data
@@ -19,7 +21,7 @@ Load image from file or URL
 \dontrun{
 # load an image from disk
 im = im_load("path/to/your/image.jpg")
-plot(im)
+pplot(im)
 # load an image from URL
 im = im_load("http://placehold.jp/150x150.png")
 }

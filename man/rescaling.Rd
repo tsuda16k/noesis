@@ -13,6 +13,9 @@ rescaling(x, from = 0, to = 1)
 
 \item{to}{highest value}
 }
+\value{
+a rescaled numeric vector
+}
 \description{
 Rescale numeric vector to have a specified range.
 }

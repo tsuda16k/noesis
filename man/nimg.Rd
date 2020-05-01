@@ -4,16 +4,18 @@
 \alias{nimg}
 \title{Create a nimg object}
 \usage{
-nimg(im)
+nimg(im, name)
 }
 \arguments{
 \item{im}{a 3 dimensional numeric array}
+
+\item{name}{a string for name attribute.}
 }
 \value{
 an object of class nimg
 }
 \description{
-nimg is a class for storing image data. Image data is stored as a 3 dimensional array with y, x, c format.
+nimg is a class for storing image data as a 3 dimensional array (y, x, c format).
 y and x are spatial coordinates, and c is a color dimension.
 }
 \examples{

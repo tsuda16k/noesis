@@ -9,6 +9,9 @@ im_cy(im)
 \arguments{
 \item{im}{an image}
 }
+\value{
+Y coordinate of image center
+}
 \description{
 Y coordinate of image center
 }

@@ -13,6 +13,9 @@ clamping(x, min = 0, max = 1)
 
 \item{max}{maximum value}
 }
+\value{
+a numeric vector
+}
 \description{
 Clamp values to a minimum and maximum value.
 }

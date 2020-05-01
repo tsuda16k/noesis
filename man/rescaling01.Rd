@@ -9,6 +9,9 @@ rescaling01(x)
 \arguments{
 \item{x}{a numeric vector}
 }
+\value{
+a rescaled numeric vector
+}
 \description{
 Rescale numeric vector to have a range between 0 to 1.
 }

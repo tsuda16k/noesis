@@ -9,6 +9,9 @@ im_cx(im)
 \arguments{
 \item{im}{an image}
 }
+\value{
+X coordinate of image center
+}
 \description{
 X coordinate of image center
 }

@@ -2,15 +2,20 @@
 % Please edit documentation in R/utils.R
 \name{rep_channel}
 \alias{rep_channel}
-\title{Replicate an image along color dimension}
+\title{Replicate a channel along color dimension}
 \usage{
-rep_channel(im, n = 3)
+rep_channel(im, n = 3, channel = 1)
 }
 \arguments{
 \item{im}{an image}
 
-\item{n}{number of iteration}
+\item{n}{number of repeat}
+
+\item{channel}{which channel to extract}
+}
+\value{
+an image
 }
 \description{
-Replicate an image along color dimension
+Replicate a channel along color dimension
 }
