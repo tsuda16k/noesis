@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils.R
 \name{im_load_dir}
 \alias{im_load_dir}
-\title{Load all images in a directory and return them as a list.}
+\title{Load all images in a directory and return them as a list}
 \usage{
 im_load_dir(path)
 }
@@ -13,7 +13,7 @@ im_load_dir(path)
 a list of images
 }
 \description{
-Load all images in a directory and return them as a list.
+Load all images in a directory and return them as a list
 }
 \examples{
 \donttest{

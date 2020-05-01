@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils.R
 \name{cubic_spline}
 \alias{cubic_spline}
-\title{Calculate a cubic spline.}
+\title{Calculate a cubic spline}
 \usage{
 cubic_spline(x, low = 0, high = 1)
 }
@@ -17,7 +17,7 @@ cubic_spline(x, low = 0, high = 1)
 a numeric vector
 }
 \description{
-Calculate a cubic spline.
+Calculate a cubic spline
 }
 \examples{
 x = seq( from = 0, to = 1, by = 0.01 )

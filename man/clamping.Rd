@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils.R
 \name{clamping}
 \alias{clamping}
-\title{Clamp values to a minimum and maximum value.}
+\title{Clamp values to a minimum and maximum value}
 \usage{
 clamping(x, min = 0, max = 1)
 }
@@ -17,7 +17,7 @@ clamping(x, min = 0, max = 1)
 a numeric vector
 }
 \description{
-Clamp values to a minimum and maximum value.
+Clamp values to a minimum and maximum value
 }
 \examples{
 clamping( -5:5, min = -3, max = 3 )

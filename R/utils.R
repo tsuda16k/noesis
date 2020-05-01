@@ -82,7 +82,7 @@ plot.nimg = function( x, rescale = FALSE, ... ){
 
   if( im_nchannel( x ) == 1 ){
     # a raster array must have exactly 3 or 4 planes
-    x = rep_channel( x, 3 )
+    x = im_rep( x, 3 )
   }
   im = x[ ,,, drop = FALSE ]
   if( rescale ){
@@ -187,7 +187,7 @@ im_load = function( file, name ){
 }
 
 
-#' Load all images in a directory and return them as a list.
+#' Load all images in a directory and return them as a list
 #' @param path a directory path containig images
 #' @return a list of images
 #' @examples
@@ -237,7 +237,7 @@ im_save = function( im, name, path, format = "png", quality = .95 ){
     name = deparse( substitute( im ) )
   }
   if( im_nchannel( im ) == 1 ){
-    im = rep_channel( im, 3 )
+    im = im_rep( im, 3 )
   }
   if( stringr::str_sub( path, stringr::str_length( path ) ) == "/" ){
     path = stringr::str_sub( path, end = stringr::str_length( path ) - 1 )
@@ -463,6 +463,37 @@ get_A = function( im ){
 }
 
 
+#' Split color channel
+#' @param im an image
+#' @return an list of images
+#' @examples
+#' split_color(regatta) # a list of R, G, and B color channels
+#' @export
+split_color = function( im ){
+  ls = list()
+  for( i in 1:dim( im )[ 3 ] ){
+    ls = c( ls, list( nimg( im[ , , i, drop = F ] ) ) )
+  }
+  return( ls )
+}
+
+
+#' Merge a list of images into an image
+#' @param imlist a list of images
+#' @return an image
+#' @examples
+#' merge_color(split_color(regatta))
+#' @export
+merge_color = function( imlist ){
+  imdim = dim( imlist[[ 1 ]] )
+  im = array( 0, c( imdim[ 1 ], imdim[ 2 ], length( imlist ) ) )
+  for( i in 1:length( imlist ) ){
+    im[,,i] = imlist[[ i ]]
+  }
+  return( nimg( im ) )
+}
+
+
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # image transform ----
 
@@ -473,7 +504,7 @@ get_A = function( im ){
 #' @param channel which channel to extract
 #' @return an image
 #' @export
-rep_channel = function( im, n = 3, channel = 1 ){
+im_rep = function( im, n = 3, channel = 1 ){
   return( nimg( array( im[ ,,channel ], c( im_height( im ), im_width( im ), n ) ) ) )
 }
 
@@ -483,12 +514,12 @@ rep_channel = function( im, n = 3, channel = 1 ){
 #' @return an image
 #' @examples
 #' R = get_R(regatta)
-#' im = force_tricolor(R)
+#' im = im_tricolored(R)
 #' @export
-force_tricolor = function( im ){
+im_tricolored = function( im ){
   n = im_nc( im )
   if( n < 3 ){
-    return( rep_channel( im, 3, 1 ) )
+    return( im_rep( im, 3, 1 ) )
   } else if( n > 3 ){
     return( get_channel( im, 1:3 ) )
   } else {
@@ -498,7 +529,6 @@ force_tricolor = function( im ){
 
 
 #' Pad image with n pixels
-#'
 #' @param im an image
 #' @param n number of pixels to pad with
 #' @param method either "zero", "mean", "repeat", "mirror", or a numeric value
@@ -594,7 +624,6 @@ im_shift = function( im, axis = "x", lag = 0 ){
 }
 
 
-# margin: (top/bottom/left/right) or (top/bottom, left/right) or (top, right, bottom, right)
 #' Image cropping
 #' @param im an image
 #' @param margin a numeric vector.
@@ -690,15 +719,107 @@ im_rotate = function( im, angle, expand = FALSE, cx = NULL, cy = NULL, interpola
 
 
 #' Resize image
+#'
+#' If either height or width is given, the other is determined to keep the aspect ratio of image.
+#' @param im an image
+#' @param height image height
+#' @param width image width
+#' @param interpolation Interpolation method. Either 0 (nearest-neibor), 1 (linear), or 2 (cubic).
+#' @return an image
+#' @examples
+#' dim(regatta)
+#' dim(im_resize(regatta, height = 150))
+#' dim(im_resize(regatta, width = 300))
+#' dim(im_resize(regatta, height = 100, width = 100))
+#' @export
+im_resize = function( im, height, width, interpolation = 1 ){
+  itype = 1 + 2 * interpolation # 0->1, 1->3, 2->5
+  if( base::missing( width ) ){ # scale to height
+    width = round( im_width( im ) * ( height / im_height( im ) ) )
+  } else if( base::missing( height ) ){ # scale to width
+    height = round( im_height( im ) * ( width / im_width( im ) ) )
+  }
+  im = imager::resize( nimg2cimg( im ), size_x = width, size_y = height, interpolation_type = itype )
+  return( cimg2nimg( im ) )
+}
 
 
+#' Resize image
+#' @param im an image
+#' @param bound max image size (width/height)
+#' @param interpolation Interpolation method. Either 0 (nearest-neibor), 1 (linear), or 2 (cubic).
+#' @return an image
+#' @examples
+#' dim(regatta)
+#' dim(im_resize_limit(regatta, 200))
+#' @export
+im_resize_limit = function( im, bound, interpolation = 1 ){
+  if( im_width( im ) > im_height( im ) ){
+    im_resize( im, width = bound, interpolation = interpolation )
+  } else {
+    im_resize( im, height = bound, interpolation = interpolation )
+  }
+}
+
+
+#' Resize image by a scale factor
+#' @param im an image
+#' @param scale a scale factor
+#' @param interpolation Interpolation method. Either 0 (nearest-neibor), 1 (linear), or 2 (cubic).
+#' @return an image
+#' @examples
+#' dim(regatta)
+#' dim(im_resize_scale(regatta, 0.5)) # half size
+#' @export
+im_resize_scale = function( im, scale = 1, interpolation = 1 ){
+  itype = 1 + 2 * interpolation # 0->1, 1->3, 2->5
+  im = imager::imresize( nimg2cimg( im ), scale, itype )
+  return( cimg2nimg( im ) )
+}
+
+
+#' Combine images
+#' @param im1 an image
+#' @param im2 an image
+#' @param y y-offset
+#' @param x x-offset
+#' @param alpha either FALSE (default) or TRUE (enable alpha transparency)
+#' @param background background color
+#' @return an image
+#' @examples
+#' pplot(im_combine(regatta, regatta, y = im_height(regatta)))
+#' pplot(im_combine(regatta, regatta, y = 100, x = 200))
+#' pplot(im_combine(regatta, regatta, y = 100, x = 200, background = 0.5))
+#' pplot(im_combine(regatta, regatta, y = 100, x = 200, background = c(1, 0.5, 0.5)))
+#' @export
+im_combine = function( im1, im2, y = 0, x = 0, alpha = FALSE, background = 1 ){
+  cc = max( im_nc( im1 ), im_nc( im2 ) )
+  h = max( im_height( im1 ), y + im_height( im2 ), im_height( im2 ), - y + im_height( im1 ) )
+  w = max( im_width( im1 ), x + im_width( im2 ), im_width( im2 ), - x + im_width( im1 ) )
+  im = array( rep( background, each = h * w, times = cc ), dim = c( h, w, cc ) )
+
+  y1 = ifelse( y < 0, -y, 0 ) + 1
+  y2 = ifelse( y < 0, 0, y ) + 1
+  x1 = ifelse( x < 0, -x, 0 ) + 1
+  x2 = ifelse( x < 0, 0, x ) + 1
+  im[ y1:( y1 + im_height( im1 ) - 1 ), x1:( x1 + im_width( im1 ) - 1 ), 1:cc ] = im1
+  im[ y2:( y2 + im_height( im2 ) - 1 ), x2:( x2 + im_width( im2 ) - 1 ), 1:cc ] = im2
+  if( ! alpha ){
+    return( nimg( im ) )
+  } else {
+    A = array( 0, dim = c( h, w, 1 ) )
+    A[ y1:( y1 + im_height( im1 ) - 1 ), x1:( x1 + im_width( im1 ) - 1 ), 1 ] = 1
+    A[ y2:( y2 + im_height( im2 ) - 1 ), x2:( x2 + im_width( im2 ) - 1 ), 1 ] = 1
+    return( merge_color( c( split_color( im ), list( A ) ) ) )
+  }
+}
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # math ----
 
 
-#' Rescale numeric vector to have a range between 0 to 1.
+#' Rescale numeric vector to have a range between 0 to 1
 #' @param x a numeric vector
 #' @return a rescaled numeric vector
 #' @seealso \code{\link{rescaling}}
@@ -714,7 +835,7 @@ rescaling01 = function( x ){
 }
 
 
-#' Rescale numeric vector to have a specified range.
+#' Rescale numeric vector to have a specified range
 #' @param x a numeric vector
 #' @param from lowest value
 #' @param to highest value
@@ -732,7 +853,7 @@ rescaling = function( x, from = 0, to = 1 ){
 }
 
 
-#' Clamp values to a minimum and maximum value.
+#' Clamp values to a minimum and maximum value
 #' @param x a numeric vector
 #' @param min minimum value
 #' @param max maximum value
@@ -747,7 +868,7 @@ clamping = function( x, min = 0, max = 1 ){
 }
 
 
-#' Calculate a cubic spline.
+#' Calculate a cubic spline
 #' @param x a numeric vector
 #' @param low minimum value of output
 #' @param high maxmum value of output

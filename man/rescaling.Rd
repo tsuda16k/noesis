@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils.R
 \name{rescaling}
 \alias{rescaling}
-\title{Rescale numeric vector to have a specified range.}
+\title{Rescale numeric vector to have a specified range}
 \usage{
 rescaling(x, from = 0, to = 1)
 }
@@ -17,7 +17,7 @@ rescaling(x, from = 0, to = 1)
 a rescaled numeric vector
 }
 \description{
-Rescale numeric vector to have a specified range.
+Rescale numeric vector to have a specified range
 }
 \examples{
 rescaling( 1:5, from = 0, to = 10 )
