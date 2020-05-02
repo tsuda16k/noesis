@@ -408,6 +408,28 @@ im_cy = function( im ){
 # image slicing ----
 
 
+force_channel_label_to_num = function( x ){
+  if( is.numeric( x ) ){
+    return( x )
+  }
+  y = c()
+  for( i in 1:length( x ) ){
+    if( x[ i ] %in% c( "R", "r", "L", "l" ) ){
+      y = c( y, 1 )
+    } else if( x[ i ] %in% c( "G", "g", "a" ) ){
+      y = c( y, 2 )
+    } else if( x[ i ] %in% c( "B", "b" ) ){
+      y = c( y, 3 )
+    } else if( x[ i ] %in% c( "A", "alpha", "Alpha" ) ){
+      y = c( y, 4 )
+    } else {
+      y = c( y, 0 )
+    }
+  }
+  return( y )
+}
+
+
 #' Extract a color channel from an image
 #' @param im an image
 #' @param channel color channel to extract. either numeric or string.
@@ -419,11 +441,7 @@ im_cy = function( im ){
 #' pplot(G)
 #' @export
 get_channel = function( im, channel ){
-  if( is.numeric( channel ) ){
-    return( nimg( im[ , , channel, drop = FALSE ] ) )
-  } else {
-    return( get_channel( im, match( channel, c( "R", "G", "B", "A" ) ) ) )
-  }
+  nimg( im[ , , force_channel_label_to_num( channel ), drop = FALSE ] )
 }
 
 
@@ -754,6 +772,9 @@ im_resize = function( im, height, width, interpolation = 1 ){
 #' dim(im_resize_limit(regatta, 200))
 #' @export
 im_resize_limit = function( im, bound, interpolation = 1 ){
+  if( max( im_size( im ) ) < bound ){
+    return( im )
+  }
   if( im_width( im ) > im_height( im ) ){
     im_resize( im, width = bound, interpolation = interpolation )
   } else {
@@ -830,6 +851,377 @@ im_threshold = function( im, thr = "auto", approx = TRUE, adjust = 1 ){
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# luminance ----
+
+
+#' Convert to grayscale
+#' @param im an image
+#' @param tricolored if TRUE, returned image has three color channels
+#' @return an image
+#' @examples
+#' pplot(im_gray(regatta))
+#' @export
+im_gray = function( im, tricolored = FALSE ){
+  if( im_nc( im ) < 2 ){
+    return( im )
+  }
+  lab = sRGB2Lab( im )
+  L = get_R( lab )
+  C0 = array( 0, dim = dim( L ) )
+  im = merge_color( list( L, C0, C0 ) ) %>% Lab2sRGB
+  if( ! tricolored ){
+    im = get_R( im )
+  }
+  return( im )
+}
+
+
+#' Get L channel of CIELAB color space
+#' @param im an image
+#' @param scale if TRUE (default), L value is divided by 100
+#' @return an image
+#' @examples
+#' pplot(get_L(regatta))
+#' @export
+get_L = function( im, scale = TRUE ){
+  if( im_nc( im ) == 1 ){
+    return( im )
+  } else if( im_nc( im ) == 2 ){
+    return( get_R( im ) )
+  }
+  if( scale ){
+    return( get_R( sRGB2Lab( im ) ) / 100 )
+  } else {
+    return( get_R( sRGB2Lab( im ) ) )
+  }
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# FFT ----
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Photoshop ----
+
+
+#' Color dodge
+#' @param bottom an image
+#' @param top an image
+#' @return an image
+#' @examples
+#' pplot(color_dodge(regatta, regatta^10))
+#' @export
+color_dodge = function( bottom, top = bottom ){
+  return( clamping( bottom / ( 1 - top ) ) )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# visualization ----
+
+
+#' Visualize CIELAB image
+#' @param im an image
+#' @param scale either TRUE or FALSE (default)
+#' @return a list of images
+#' @export
+CIELAB_visualize = function( im, scale = FALSE ){
+  lab = sRGB2Lab( im )
+  L = get_R( lab )
+  A = get_G( lab )
+  B = get_B( lab )
+  ab_max = max( abs( A ), abs( B ) )
+
+  LM = array( mean( L ), dim = dim( L ) )
+  C0 = array( 0, dim = dim( L ) )
+  if( scale ){
+    A = clamping( A * 90 / ab_max, -98, 98 )
+    B = clamping( B * 90 / ab_max, -98, 98 )
+  }
+  im_L = merge_color( list( L, C0, C0 ) ) %>% Lab2sRGB
+  im_a = merge_color( list( LM, A, C0 ) ) %>% Lab2sRGB
+  im_b = merge_color( list( LM, C0, B ) ) %>% Lab2sRGB
+  return( list( L = im_L, a = im_a, b = im_b ) )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# stats ----
+
+
+#' L2 distance of pixel value
+#' @param im1 an image
+#' @param im2 an image
+#' @return mean squared error
+#' @examples
+#' im_diff(regatta, regatta^2)
+#' @export
+im_diff = function( im1, im2 ){
+  if( imager::is.cimg( im1 ) ){
+    im1 = cimg2nimg( im1 )
+  }
+  if( imager::is.cimg( im2 ) ){
+    im2 = cimg2nimg( im2 )
+  }
+  return( mean( ( im1 - im2 )^2 ) )
+}
+
+
+#' Get moment statistics of a vector/array
+#' @param x data
+#' @param order order of the moment to be computed
+#' @return a numeric vector
+#' @examples
+#' get_moments( rnorm( 20 ) ) # get the 1st to 4th order moments
+#' get_moments( rnorm( 20 ), order = 3 ) # get only the 3rd order moment (skewness)
+#' get_moments( rnorm( 20 ), order = c( 3, 1 ) ) # get skewness and mean
+#' @export
+get_moments = function( x, order = 1:4 ){
+  m = rep( 0.0, times = length( order ) )
+  names( m ) = c( "mean", "sd", "skewness", "kurtosis" )[ order ]
+  for( i in 1:length( order ) ){
+    if( order[ i ] == 1 ){
+      m[ i ] = base::mean( x )
+    } else if( order[ i ] == 2 ){
+      m[ i ] = stats::sd( x )
+    } else if( order[ i ] == 3 ){
+      m[ i ] = moments::skewness( x )
+    } else if( order[ i ] == 4 ){
+      m[ i ] = moments::kurtosis( x )
+    }
+  }
+  return( m )
+}
+
+
+#' Get moment statistics of an image
+#' @param im an image
+#' @param channel color channel
+#' @param order order of the moment to be computed
+#' @param space color space, either "CIELAB" (default) or "RGB
+#' @param max_size resize input image before calculation of moments
+#' @return a data frame of moment values
+#' @examples
+#' im_moments(regatta) # moments in CIELAB color space
+#' im_moments(regatta, space = "RGB") # moments of RGB channels
+#' im_moments(regatta, channel = 1) # L channel of CIELAB color space
+#' im_moments(regatta, channel = "L") # same as above
+#' im_moments(regatta, channel = 1, space = "RGB") # R channel of the input image
+#' im_moments(regatta, channel = 2:3, order = c(2, 3)) # sd and skew in a and b channels
+#' im_moments(regatta, channel = c("a", "b"), order = c(2, 3)) # same as above
+#' @export
+im_moments = function( im, channel = 1:3, order = 1:4, space = "CIELAB", max_size = 1024 ){
+  if( im_nc( im ) == 1 ){
+    channel = 1
+  }
+  df = data.frame()
+  im = im_resize_limit( im, max_size )
+  if( space == "CIELAB" ){
+    if( im_nc( im ) > 2 ){
+      im = sRGB2Lab( im )
+    }
+    clabel = c( "L", "a", "b" )
+  } else {
+    clabel = c( "R", "G", "B", "A" )
+  }
+  channel = force_channel_label_to_num( channel )
+  for( i in 1:length( channel ) ){
+    mmt = get_moments( get_channel( im, channel[ i ] ), order )
+    df = rbind( df, data.frame(
+      channel = clabel[ channel[ i ] ], moment = names( mmt ), value = unname( mmt ) ) )
+  }
+  return( df )
+}
+
+
+#' Apply shift and rescale to the distribution of pixel values
+#' @param im an image
+#' @param channel color channel
+#' @param mean center of distribution. when not given, the mean of that channel is used.
+#' @param sd dispersion of distribution. when not given, the sd of that channel is used.
+#' @param space color space
+#' @param clamp either TRUE (default, output pixel value is clamped to range 0-1) or FALSE
+#' @return an image
+#' @examples
+#' im_moments(regatta) # before manipulation
+#' im_moments(im_distribute(regatta, "b", mean = 0, sd = 20)) # b channel is adjusted
+#' pplot(im_distribute(regatta, "b", mean = 0, sd = 20)) # see the effect
+#' pplot(im_distribute(regatta, c("a", "b"), c(-5, 0), c(15, 20))) # adjust two channels simultaneously
+#' @export
+im_distribute = function( im, channel, mean = NULL, sd = NULL, space = "CIELAB", clamp = TRUE ){
+  channel = force_channel_label_to_num( channel )
+  if( space == "CIELAB" && im_nc( im ) > 2 ){
+    im = sRGB2Lab( im )
+  }
+  for( i in 1:length( channel ) ){
+    if( is.null( mean[ i ] ) || is.na( mean[ i ] ) ){
+      M = base::mean( get_channel( im, channel[ i ] ) )
+    } else {
+      M = mean[ i ]
+    }
+    if( is.null( sd[ i ] ) || is.na( sd[ i ] ) ){
+      S = stats::sd( get_channel( im, channel[ i ] ) )
+    } else {
+      S = sd[ i ]
+    }
+    I = im[ , , channel[ i ], drop = F ]
+    im[ , , channel[ i ] ] = S * ( ( I - base::mean( I ) ) / stats::sd( I ) ) + M
+  }
+  if( space == "CIELAB" && im_nc( im ) > 2 ){
+    im = Lab2sRGB( im )
+  }
+  if( clamp ){
+    im = clamping( im )
+  }
+  return( im )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# math ----
+
+
+#' Rescale numeric vector to have a range between 0 to 1
+#' @param x a numeric vector
+#' @return a rescaled numeric vector
+#' @seealso \code{\link{rescaling}}
+#' @examples
+#' rescaling01( 1:5 )
+#' @export
+rescaling01 = function( x ){
+  if( max( x ) == min( x ) ){
+    return( x )
+  } else {
+    return( ( x - min( x ) ) / ( max( x ) - min( x ) ) )
+  }
+}
+
+
+#' Rescale numeric vector to have a specified range
+#' @param x a numeric vector
+#' @param from lowest value
+#' @param to highest value
+#' @return a rescaled numeric vector
+#' @seealso \code{\link{rescaling01}}
+#' @examples
+#' rescaling( 1:5, from = 0, to = 10 )
+#' @export
+rescaling = function( x, from = 0, to = 1 ){
+  if( max( x ) == min( x ) ){
+    return( x )
+  } else {
+    return( from + ( to - from ) * rescaling01( x ) )
+  }
+}
+
+
+#' Clamp values to a minimum and maximum value
+#' @param x a numeric vector
+#' @param min minimum value
+#' @param max maximum value
+#' @return a numeric vector
+#' @examples
+#' clamping( -5:5, min = -3, max = 3 )
+#' @export
+clamping = function( x, min = 0, max = 1 ){
+  x[ x < min ] = min
+  x[ x > max ] = max
+  return( x )
+}
+
+
+#' Calculate a cubic spline
+#' @param x a numeric vector
+#' @param low minimum value of output
+#' @param high maxmum value of output
+#' @return a numeric vector
+#' @examples
+#' x = seq( from = 0, to = 1, by = 0.01 )
+#' plot( x, cubic_spline( x ) )
+#' @export
+cubic_spline = function( x, low = 0, high = 1 ){
+  if( low == high ){
+    warning( "low and high must be different!" )
+  } else if( low > high ){
+    return( 1 - ( cubic_spline( x, high, low ) ) )
+  }
+  x2 = x
+  t = x[ x > low & x < high ]
+  t = ( t - low ) / ( high - low )
+  x2[ x > low & x < high ] = t^2 * ( 3 - 2 * t )
+  x2[ x <= low ] = 0
+  x2[ x >= high ] = 1
+  return( x2 )
+}
+
+
+#' Calculate the Euclidean distance between two points
+#' @param x1 x coordinate of point 1
+#' @param y1 y coordinate of point 1
+#' @param x2 x coordinate of point 2
+#' @param y2 y coordinate of point 2
+#' @return distance between point 1 and 2
+#' @export
+eucdist = function( x1, y1, x2, y2 ){
+  return( sqrt( ( x1 - x2 )^2 + ( y1 - y2 )^2 ) )
+}
+
+
+#' Shift operation
+#' @param v a numeric vector
+#' @param lag a numeric
+#' @return a lagged vector
+#' @export
+vec_shift = function( v, lag = 0 ){
+  if( lag == 0 || abs( lag ) == length( v ) ){
+    return( v )
+  }
+  index = 1:length( v )
+  lag = lag %% length( index )
+  index = c( index[ length( index ) - lag + 1 ]:max( index ), 1:index[ length( index ) - lag ] )
+  return( index )
+}
+
+
+#' Power operation
+#' @param x a numeric vector
+#' @param p power term
+#' @return a numeric vector
+#' @export
+pow = function( x, p ){
+  return( x^p )
+}
+
+
+#' Calculate range
+#' @param x a numeric vector
+#' @return the range of x
+#' @export
+MinMax = MaxMin = function( x ){
+  return( max( x ) - min( x ) )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# string ----
+
+
+get_image_name_from_file = function( file ){
+  tryCatch({
+    name = stringr::str_split( file, "/" )[[ 1 ]]
+    name = name[ length( name ) ]
+    name = stringr::str_split( name, "[.]" )[[ 1 ]]
+    return( name[ 1 ] )
+  },
+  error = function(e) {
+    return( "-" )
+  })
+
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # color space ----
 
 
@@ -842,12 +1234,6 @@ sRGB2RGB = function( im ){
   im[ mask ] = im[ mask ] / 12.92
   im[ !mask ] = ( ( im[ !mask ] + 0.055 ) / 1.055 )^2.4
   return( im )
-  # cim = boats
-  # im = boats %>% cimg2array
-  # imdt = boats %>% cimg2dt
-  # system.time( for( i in 1:100 ) sRGB2RGB( cim ) )
-  # system.time( for( i in 1:100 ) sRGB2RGB( im ) )
-  # system.time( for( i in 1:100 ) sRGB2RGB( imdt ) )
 }
 
 
@@ -1117,232 +1503,4 @@ sRGB2YUV = function( im, use.B601 = FALSE ){
 YUV2sRGB = function( im,  use.B601 = FALSE ){
   im %>% YUV2RGB( use.B601 ) %>% RGB2sRGB
 }
-
-
-#' Visualize CIELAB image
-#' @param im an image
-#' @param scale either TRUE or FALSE (default)
-#' @return a list of images
-#' @export
-CIELAB_visualize = function( im, scale = FALSE ){
-  lab = sRGB2Lab( im )
-  L = get_R( lab )
-  A = get_G( lab )
-  B = get_B( lab )
-  ab_max = max( abs( A ), abs( B ) )
-
-  LM = array( mean( L ), dim = dim( L ) )
-  C0 = array( 0, dim = dim( L ) )
-  if( scale ){
-    A = clamping( A * 90 / ab_max, -98, 98 )
-    B = clamping( B * 90 / ab_max, -98, 98 )
-  }
-  im_L = merge_color( list( L, C0, C0 ) ) %>% Lab2sRGB
-  im_a = merge_color( list( LM, A, C0 ) ) %>% Lab2sRGB
-  im_b = merge_color( list( LM, C0, B ) ) %>% Lab2sRGB
-  return( list( L = im_L, a = im_a, b = im_b ) )
-}
-
-
-#' Convert to grayscale
-#' @param im an image
-#' @param tricolored if TRUE, returned image has three color channels
-#' @return an image
-#' @examples
-#' pplot(im_gray(regatta))
-#' @export
-im_gray = function( im, tricolored = FALSE ){
-  if( im_nc( im ) < 2 ){
-    return( im )
-  }
-  lab = sRGB2Lab( im )
-  L = get_R( lab )
-  C0 = array( 0, dim = dim( L ) )
-  im = merge_color( list( L, C0, C0 ) ) %>% Lab2sRGB
-  if( ! tricolored ){
-    im = get_R( im )
-  }
-  return( im )
-}
-
-
-#' Get L channel of CIELAB color space
-#' @param im an image
-#' @param scale if TRUE (default), L value is divided by 100
-#' @return an image
-#' @examples
-#' pplot(get_L(regatta))
-#' @export
-get_L = function( im, scale = TRUE ){
-  if( im_nc( im ) == 1 ){
-    return( im )
-  } else if( im_nc( im ) == 2 ){
-    return( get_R( im ) )
-  }
-  if( scale ){
-    return( get_R( sRGB2Lab( im ) ) / 100 )
-  } else {
-    return( get_R( sRGB2Lab( im ) ) )
-  }
-}
-
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# Stats ----
-
-
-im_diff = function( im1, im2 ){
-  if( imager::is.cimg( im1 ) ){
-    im1 = cimg2nimg( im1 )
-  }
-  if( imager::is.cimg( im2 ) ){
-    im2 = cimg2nimg( im2 )
-  }
-  return( mean( ( im1 - im2 )^2 ) )
-}
-
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# math ----
-
-
-#' Rescale numeric vector to have a range between 0 to 1
-#' @param x a numeric vector
-#' @return a rescaled numeric vector
-#' @seealso \code{\link{rescaling}}
-#' @examples
-#' rescaling01( 1:5 )
-#' @export
-rescaling01 = function( x ){
-  if( max( x ) == min( x ) ){
-    return( x )
-  } else {
-    return( ( x - min( x ) ) / ( max( x ) - min( x ) ) )
-  }
-}
-
-
-#' Rescale numeric vector to have a specified range
-#' @param x a numeric vector
-#' @param from lowest value
-#' @param to highest value
-#' @return a rescaled numeric vector
-#' @seealso \code{\link{rescaling01}}
-#' @examples
-#' rescaling( 1:5, from = 0, to = 10 )
-#' @export
-rescaling = function( x, from = 0, to = 1 ){
-  if( max( x ) == min( x ) ){
-    return( x )
-  } else {
-    return( from + ( to - from ) * rescaling01( x ) )
-  }
-}
-
-
-#' Clamp values to a minimum and maximum value
-#' @param x a numeric vector
-#' @param min minimum value
-#' @param max maximum value
-#' @return a numeric vector
-#' @examples
-#' clamping( -5:5, min = -3, max = 3 )
-#' @export
-clamping = function( x, min = 0, max = 1 ){
-  x[ x < min ] = min
-  x[ x > max ] = max
-  return( x )
-}
-
-
-#' Calculate a cubic spline
-#' @param x a numeric vector
-#' @param low minimum value of output
-#' @param high maxmum value of output
-#' @return a numeric vector
-#' @examples
-#' x = seq( from = 0, to = 1, by = 0.01 )
-#' plot( x, cubic_spline( x ) )
-#' @export
-cubic_spline = function( x, low = 0, high = 1 ){
-  if( low == high ){
-    warning( "low and high must be different!" )
-  } else if( low > high ){
-    return( 1 - ( cubic_spline( x, high, low ) ) )
-  }
-  x2 = x
-  t = x[ x > low & x < high ]
-  t = ( t - low ) / ( high - low )
-  x2[ x > low & x < high ] = t^2 * ( 3 - 2 * t )
-  x2[ x <= low ] = 0
-  x2[ x >= high ] = 1
-  return( x2 )
-}
-
-
-#' Calculate the Euclidean distance between two points
-#' @param x1 x coordinate of point 1
-#' @param y1 y coordinate of point 1
-#' @param x2 x coordinate of point 2
-#' @param y2 y coordinate of point 2
-#' @return distance between point 1 and 2
-#' @export
-eucdist = function( x1, y1, x2, y2 ){
-  return( sqrt( ( x1 - x2 )^2 + ( y1 - y2 )^2 ) )
-}
-
-
-#' Shift operation
-#' @param v a numeric vector
-#' @param lag a numeric
-#' @return a lagged vector
-#' @export
-vec_shift = function( v, lag = 0 ){
-  if( lag == 0 || abs( lag ) == length( v ) ){
-    return( v )
-  }
-  index = 1:length( v )
-  lag = lag %% length( index )
-  index = c( index[ length( index ) - lag + 1 ]:max( index ), 1:index[ length( index ) - lag ] )
-  return( index )
-}
-
-
-#' Power operation
-#' @param x a numeric vector
-#' @param p power term
-#' @return a numeric vector
-#' @export
-pow = function( x, p ){
-  return( x^p )
-}
-
-
-#' Calculate range
-#' @param x a numeric vector
-#' @return the range of x
-#' @export
-MinMax = MaxMin = function( x ){
-  return( max( x ) - min( x ) )
-}
-
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# string ----
-
-
-get_image_name_from_file = function( file ){
-  tryCatch({
-    name = stringr::str_split( file, "/" )[[ 1 ]]
-    name = name[ length( name ) ]
-    name = stringr::str_split( name, "[.]" )[[ 1 ]]
-    return( name[ 1 ] )
-  },
-  error = function(e) {
-    return( "-" )
-  })
-
-}
-
-
 
