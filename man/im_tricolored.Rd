@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils.R
 \name{im_tricolored}
 \alias{im_tricolored}
-\title{Fprce an image to have three and only three color channels}
+\title{Force an image to have three and only three color channels}
 \usage{
 im_tricolored(im)
 }
@@ -13,7 +13,7 @@ im_tricolored(im)
 an image
 }
 \description{
-Fprce an image to have three and only three color channels
+Force an image to have three and only three color channels
 }
 \examples{
 R = get_R(regatta)

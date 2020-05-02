@@ -7,7 +7,7 @@
 im_load_dir(path)
 }
 \arguments{
-\item{path}{a directory path containig images}
+\item{path}{a directory path containing images}
 }
 \value{
 a list of images

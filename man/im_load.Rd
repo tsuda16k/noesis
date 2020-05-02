@@ -9,7 +9,7 @@ im_load(file, name)
 \arguments{
 \item{file}{path to file or URL}
 
-\item{name}{a string for name attribute. if missing, inffered from the file argument.}
+\item{name}{a string for name attribute. if missing, inferred from the file argument.}
 }
 \value{
 an array of image data

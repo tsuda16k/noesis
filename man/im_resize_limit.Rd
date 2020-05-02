@@ -11,7 +11,7 @@ im_resize_limit(im, bound, interpolation = 1)
 
 \item{bound}{max image size (width/height)}
 
-\item{interpolation}{Interpolation method. Either 0 (nearest-neibor), 1 (linear), or 2 (cubic).}
+\item{interpolation}{Interpolation method. Either 0 (nearest-neighbor), 1 (linear), or 2 (cubic).}
 }
 \value{
 an image

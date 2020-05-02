@@ -2,7 +2,7 @@
 
 #' @importFrom stringr str_match str_split str_sub
 #' @importFrom graphics plot
-#' @importFrom magrittr "%>%"
+#' @importFrom magrittr mod "%>%"
 NULL
 
 
@@ -131,7 +131,7 @@ pplot = function( im, rescale = FALSE ){
 
 #' Load image from file or URL
 #' @param file path to file or URL
-#' @param name a string for name attribute. if missing, inffered from the file argument.
+#' @param name a string for name attribute. if missing, inferred from the file argument.
 #' @return an array of image data
 #' @examples
 #' \dontrun{
@@ -188,7 +188,7 @@ im_load = function( file, name ){
 
 
 #' Load all images in a directory and return them as a list
-#' @param path a directory path containig images
+#' @param path a directory path containing images
 #' @return a list of images
 #' @examples
 #' \donttest{
@@ -441,7 +441,11 @@ force_channel_label_to_num = function( x ){
 #' pplot(G)
 #' @export
 get_channel = function( im, channel ){
-  nimg( im[ , , force_channel_label_to_num( channel ), drop = FALSE ] )
+  if( length( dim( im ) ) == 2 ){
+    return( im )
+  } else {
+    return( nimg( im[ , , force_channel_label_to_num( channel ), drop = FALSE ] ) )
+  }
 }
 
 
@@ -523,11 +527,11 @@ merge_color = function( imlist ){
 #' @return an image
 #' @export
 im_rep = function( im, n = 3, channel = 1 ){
-  return( nimg( array( im[ ,,channel ], c( im_height( im ), im_width( im ), n ) ) ) )
+  nimg( array( get_channel( im, channel ), c( im_height( im ), im_width( im ), n ) ) )
 }
 
 
-#' Fprce an image to have three and only three color channels
+#' Force an image to have three and only three color channels
 #' @param im an image
 #' @return an image
 #' @examples
@@ -742,7 +746,7 @@ im_rotate = function( im, angle, expand = FALSE, cx = NULL, cy = NULL, interpola
 #' @param im an image
 #' @param height image height
 #' @param width image width
-#' @param interpolation Interpolation method. Either 0 (nearest-neibor), 1 (linear), or 2 (cubic).
+#' @param interpolation Interpolation method. Either 0 (nearest-neighbor), 1 (linear), or 2 (cubic).
 #' @return an image
 #' @examples
 #' dim(regatta)
@@ -765,7 +769,7 @@ im_resize = function( im, height, width, interpolation = 1 ){
 #' Resize image
 #' @param im an image
 #' @param bound max image size (width/height)
-#' @param interpolation Interpolation method. Either 0 (nearest-neibor), 1 (linear), or 2 (cubic).
+#' @param interpolation Interpolation method. Either 0 (nearest-neighbor), 1 (linear), or 2 (cubic).
 #' @return an image
 #' @examples
 #' dim(regatta)
@@ -786,7 +790,7 @@ im_resize_limit = function( im, bound, interpolation = 1 ){
 #' Resize image by a scale factor
 #' @param im an image
 #' @param scale a scale factor
-#' @param interpolation Interpolation method. Either 0 (nearest-neibor), 1 (linear), or 2 (cubic).
+#' @param interpolation Interpolation method. Either 0 (nearest-neighbor), 1 (linear), or 2 (cubic).
 #' @return an image
 #' @examples
 #' dim(regatta)
@@ -899,6 +903,487 @@ get_L = function( im, scale = TRUE ){
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # FFT ----
+
+
+#' Shift fft image
+#' @param im an image
+#' @param inverse inverse transform
+#' @return an image
+#' @export
+fft_shift = function( im, inverse = FALSE ){
+  lagx = floor( im_width( im ) / 2 )
+  lagy = floor( im_height( im ) / 2 )
+  if( inverse ){
+    lagx = -lagx
+    lagy = -lagy
+  }
+  im = im_shift( im, "x", lagx )
+  im = im_shift( im, "y", lagy )
+  return( im )
+}
+
+
+#' forward fft
+#' @param im an image
+#' @return an image
+#' @export
+for_fft = function( im ){
+  fft_shift( stats::fft( im ) / length( im ) )
+}
+
+
+#' inverse fft
+#' @param im an image
+#' @return an image
+#' @export
+inv_fft = function( im ){
+  Re( stats::fft( fft_shift( im, inverse = TRUE ), inverse = TRUE ) )
+}
+
+
+#' Get lowpass kernel
+#' @param kernel either "ideal", "gauss", "butterworth", or "dc"
+#' @param height image height
+#' @param width image width
+#' @param cutoff cutoff frequency
+#' @param order order of butterworth filter
+#' @return an image
+#' @export
+fft_lowpass_kernel = function( kernel, height, width, cutoff, order = 4 ){
+  cx = floor( width / 2 ) + 1
+  cy = floor( height / 2 ) + 1
+  u = matrix( 1:width - cx, ncol = width, nrow = height, byrow = T )
+  v = matrix( 1:height - cy, ncol = width, nrow = height, byrow = F )
+  D = sqrt( u^2 + v^2 )
+  if( kernel == "ideal" ){
+    H = D
+    H[ D <= cutoff ] = 1
+    H[ D > cutoff ] = 0
+  } else if( kernel == "gauss" ){
+    H = exp( -1 * D * D / 2 / cutoff / cutoff )
+  } else if( kernel %in% c( "butterworth", "bw", "BW", "btw" ) ){
+    H = 1 / ( 1 + ( D / cutoff )^( 2 * order ) )
+  } else if( kernel  %in% c( "dc", "DC" ) ){
+    H = matrix( 0, ncol = width, nrow = height )
+    H[ cy, cx ] = 1
+  }
+  return( H )
+}
+
+
+#' Apply fft filter
+#' @param im an image
+#' @param xpass either "lowpass", "highpass", or "bandpass"
+#' @param kernel either "ideal", "gauss", "butterworth", or "dc"
+#' @param cutoff cutoff frequency
+#' @param cutoff2 second cutoff frequency
+#' @param order order of butterworth filter
+#' @return an image
+#' @examples
+#' pplot(fft_filter(regatta, "lowpass", "ideal", 10)) # ideal lowpass filterig
+#' pplot(fft_filter(regatta, "lowpass", "gauss", 10)) # gaussian lowpass filterig
+#' # 5th-order butterworth lowpass filtering
+#' pplot(fft_filter(regatta, "lowpass", "butterworth", 10, order = 5))
+#' im = im_gray(regatta)
+#' pplot(fft_filter(im, "highpass", "gauss", 60), rescale = TRUE) # gaussian highpass filterig
+#' pplot(fft_filter(im, "bandpass", "gauss", 10, 20), rescale = TRUE) # gaussian bandpass filterig
+#' @export
+fft_filter = function( im, xpass, kernel = "ideal", cutoff, cutoff2, order = 4 ){
+  if( xpass == "lowpass" ){
+    fft_mask = fft_lowpass_kernel( kernel, im_height( im ), im_width( im ), cutoff, order ) %>%
+      im_rep( im_nc( im ) )
+  } else if( xpass == "highpass" ){
+    fft_mask = 1 - fft_lowpass_kernel( kernel, im_height( im ), im_width( im ), cutoff, order ) %>%
+      im_rep( im_nc( im ) )
+  } else if( xpass == "bandpass" ){
+    low = fft_lowpass_kernel( kernel, im_height( im ), im_width( im ), max( cutoff, cutoff2 ), order ) %>%
+      im_rep( im_nc( im ) )
+    high = 1 - fft_lowpass_kernel( kernel, im_height( im ), im_width( im ), min( cutoff, cutoff2 ), order ) %>%
+      im_rep( im_nc( im ) )
+    fft_mask = pmin( low, high )
+  }
+  im2 = inv_fft( for_fft( im ) * fft_mask )
+  return( im2 )
+}
+
+
+#' fft phase scrambling
+#' @param im an image
+#' @return an image
+#' @examples
+#' pplot(fft_phase_scramble(regatta))
+#' @export
+fft_phase_scramble = function( im ){
+  if( im_nc( im ) >= 3 ){
+    ls = list()
+    for( i in 1:im_nc( im ) ){
+      ls = c( ls, list( fft_phase_scramble( get_channel( im, i ) ) ) )
+    }
+    out = merge_color( ls )
+    return( out )
+  }
+  #
+  imf = fft( im ) / length( im )
+  A = abs( imf )
+  P = atan2( Im( imf ), Re( imf ) )
+  #
+  h = im_height( im )
+  w = im_width( im )
+  cy = floor( h / 2 ) + 1
+  cx = floor( w / 2 ) + 1
+  p = array( runif( prod( im_size( im ) ), min = -pi, max = pi ), dim = im_size( im ) )
+  p[ 1, 1 ] = 0
+  if( im_height( im ) %% 2 == 1 & im_width( im ) %% 2 == 1 ){ # odd, odd
+    p[ 2:cy, 1 ] = -p[ h:(cy+1), 1 ]
+    p[ 1, 2:cx ] = -p[ 1, w:(cx+1) ]
+    p[ 2:h, 2:cx ] = -array( rev( p[ 2:h, (cx+1):w ] ), dim = dim( p[ 2:h, 2:cx ] ) )
+  } else if( im_height( im ) %% 2 == 1 & im_width( im ) %% 2 == 0 ){ # odd, even
+    p[ 2:cy, 1 ] = -p[ h:(cy+1), 1 ]
+    p[ 1, 2:(cx-1) ] = -p[ 1, w:(cx+1) ]
+    p[ 2:h, 2:(cx-1) ] = -array( rev( p[ 2:h, (cx+1):w ] ), dim = dim( p[ 2:h, 2:(cx-1) ] ) )
+  } else if( im_height( im ) %% 2 == 0 & im_width( im ) %% 2 == 1 ){ # even, odd
+    p[ 2:(cy-1), 1 ] = -p[ h:(cy+1), 1 ]
+    p[ 1, 2:cx ] = -p[ 1, w:(cx+1) ]
+    p[ 2:(cy-1), 2:w ] = -array( rev( p[ (cy+1):h, 2:w ] ), dim = dim( p[ 2:(cy-1), 2:w ] ) )
+  } else if( im_height( im ) %% 2 == 0 & im_width( im ) %% 2 == 0 ){ # even, even
+    p[ 2:(cy-1), 1 ] = -p[ h:(cy+1), 1 ]
+    p[ 1, 2:(cx-1) ] = -p[ 1, w:(cx+1) ]
+    p[ 2:(cy-1), 2:(cx-1) ] = -array( rev( p[ (cy+1):h, (cx+1):w ] ), dim = dim( p[ 2:(cy-1), 2:(cx-1) ] ) )
+    p[ (cy+1):h, 2:(cx-1) ] = -array( rev( p[ 2:(cy-1), (cx+1):w ] ), dim = dim( p[ (cy+1):h, 2:(cx-1) ] ) )
+  }
+  dim( p ) = c( dim( p ), 1 )
+  im2 = Re( fft( A * exp( 1i * p ), inverse = T ) ) %>% clamping
+  # imf2 = complex( real = A * cos( p ), imaginary = A * sin( p ) )
+  # im2 = Re( stats::fft( array( imf2, dim = c( im_size( im ), 1, 1 ) ), inverse = T ) )
+  return( nimg( im2 ) )
+}
+
+
+#' Calculate fft amplitude
+#' @param im an image
+#' @param modify if TRUE, amplitude value is log-rescaled, which is useful for plotting purpose
+#' @param dc_value if given, DC (direct current) component is replaced with this value
+#' @return an image
+#' @examples
+#' amp = fft_amplitude(im_gray(regatta), modify = TRUE)
+#' pplot(amp)
+#' @export
+fft_amplitude = function( im, modify = FALSE, dc_value ){
+  if( is.list( im ) ){
+    for( i in 1:length( im ) ){
+      if( base::missing( dc_value ) ){
+        im[[ i ]] = fft_amplitude( im[[ i ]], modify )
+      } else {
+        im[[ i ]] = fft_amplitude( im[[ i ]], modify, dc_value )
+      }
+    }
+    return( im )
+  }
+  imf = abs( for_fft( im ) )
+  if( ! base::missing( dc_value ) ){
+    cx = floor( im_width( im ) / 2 ) + 1
+    cy = floor( im_height( im ) / 2 ) + 1
+    imf[ cy, cx, ] = dc_value
+  }
+  if( modify ){
+    return( imf %>% + max( .Machine$double.eps, min( . ) ) %>% log %>% rescaling01 %>% .^2 )
+  } else {
+    return( imf )
+  }
+}
+
+
+#' Calculate fft phase
+#' @param im an image
+#' @return an image
+#' @examples
+#' phase = fft_phase(im_gray(regatta))
+#' pplot(phase, rescale = TRUE)
+#' @export
+fft_phase = function( im ){
+  imf = for_fft( im )
+  return( atan2( Im( imf ), Re( imf ) ) )
+}
+
+
+#' Calculate fft amplitude and phase
+#' @param im an image
+#' @param modify if TRUE, amplitude value is log-rescaled, which is useful for plotting purpose
+#' @return an image
+#' @examples
+#' img = fft_spectrum(im_gray(regatta), modify = TRUE)
+#' pplot(img$magnitude)
+#' pplot(img$phase, rescale = TRUE)
+#' @export
+fft_spectrum = function( im, modify = FALSE ){
+  if( is.list( im ) ){
+    for( i in 1:length( im ) ){
+      im[[ i ]] = fft_spectrum( im[[ i ]], modify )
+    }
+    return( im )
+  }
+  imf = for_fft( im )
+  if( modify ){
+    return( list(
+      magnitude = abs( imf ) %>% + max( .Machine$double.eps, min( . ) ) %>% log %>% rescaling01 %>% .^2,
+      phase = atan2( Im( imf ), Re( imf ) ) )
+    )
+  } else {
+    return( list( magnitude = abs( imf ), phase = atan2( Im( imf ), Re( imf ) ) )
+    )
+  }
+}
+
+
+#' Create fft angular mask
+#' @param height image height
+#' @param width image width
+#' @param orientation mask orientation in radians
+#' @param angle angle of mask in radians
+#' @param cutoff cutoff frequencies
+#' @return an image
+#' @export
+fft_angular_mask = function( height, width, orientation = 0, angle = 0,
+                             cutoff = c( 0, min( width, height ) / 2 ) ){
+  orientation = mod( orientation, 2 * pi )
+  angle = angle / 2
+
+  cx = floor( width / 2 ) + 1
+  cy = floor( height / 2 ) + 1
+
+  u = matrix( 1:width - cx, ncol = width, nrow = height, byrow = T )
+  v = matrix( 1:height - cy, ncol = width, nrow = height, byrow = F )
+  D = sqrt( u^2 + v^2 )
+
+  A = -atan2( v, u )
+  A[ A < 0 ] = A[ A < 0 ] + 2 * pi
+
+  H = matrix( 0, ncol = width, nrow = height )
+  if( angle == 0 ){
+    mask = A == orientation | A == pi
+  } else if( orientation - angle < 0 || orientation + angle >= 2 * pi ){
+    mask = A >= mod( orientation - angle, 2 * pi ) | A <= mod( orientation + angle, 2 * pi )
+    orientation = orientation + pi
+    mask = mask | ( A >= mod( orientation - angle, 2 * pi ) & A <= mod( orientation + angle, 2 * pi ) )
+  } else {
+    mask = A >= mod( orientation - angle, 2 * pi ) & A <= mod( orientation + angle, 2 * pi )
+    orientation = orientation + pi
+    mask = mask | A >= mod( orientation - angle, 2 * pi ) & A <= mod( orientation + angle, 2 * pi )
+  }
+  H[ mask & !(D <= cutoff[ 1 ]) & D <= cutoff[ 2 ] ] = 1
+  H[ cy, cx ] = 0 # exclude DC component
+
+  return( nimg( H ) )
+
+  # # angular completeness
+  # circ = fft_angular_mask( 256, 256, 0, 2 * pi )
+  # n = 360 / 1
+  # ang = 2 * pi / n
+  # ori = seq( from = 0, by = ang, length.out = n )
+  # S = 0
+  # M = NULL
+  # for ( i in ori ) {
+  #   mask = fft_angular_mask( 256, 256, i, ang )
+  #   S = S + sum( mask )
+  #   if( is.null( M ) ){
+  #     M = mask
+  #   } else {
+  #     M = M | mask
+  #   }
+  # }
+  # print(sum(circ)) # region of interest
+  # print(sum(M)) # covered region by the sum of each mask
+  # print(S/2) # can be smaller/larger than sum(circ)
+  #
+  # # distance completeness
+  # resol = 128
+  # circ = fft_angular_mask( resol, resol, 0, 2 * pi )
+  # step = 1
+  # dist = c( seq( 0, by = step, to = resol / 2 ) )
+  # S = 0
+  # M = NULL
+  # for ( i in 1:( resol / 2 / step ) ) {
+  #   mask = fft_angular_mask( resol, resol, 0, 2 * pi, c( dist[ i ], dist[ i + 1 ] ) )
+  #   S = S + sum( mask )
+  #   if( is.null( M ) ){
+  #     M = mask
+  #   } else {
+  #     M = M | mask
+  #   }
+  # }
+  # print(sum(circ))
+  # print(sum(M))
+  # print(S) # must be (and is) equal to sum(circ)
+}
+
+
+#' Calculate orientation-averaged amplitude
+#' @param im an image
+#' @param step skip calculation
+#' @param mask if TRUE, apply circular mask before calculation
+#' @return a data frame
+#' @examples
+#' df = fft_amplitude1D(regatta, 4)
+#' plot(df)
+#' @export
+fft_amplitude1D = function( im, step = 2, mask = F ){
+  im = im_crop_square( get_L( im ) )
+  height = im_height( im )
+  width = im_width( im )
+  if( mask ){
+    filt = fft_lowpass_kernel( "bw", height, width, height * 0.47, 20 )
+    im = filt * im + ( 1 - filt ) * mean( im )
+  }
+  nyquist = floor( min( im_size( im ) ) / 2 )
+  dist = c( seq( 0, by = step, to = nyquist ) )
+  amplitudes = vector( "numeric", length( nyquist ) )
+
+  imf = fft_amplitude( im ) * width * height
+  for ( i in 1:length( dist ) - 1 ) {
+    mask = fft_angular_mask( height, width, 0, 2 * pi, c( dist[ i ], dist[ i + 1 ] ) )
+    amplitudes[ i ] = mean( imf[ mask > 0 ] )
+  }
+
+  df = data.frame( cpp = dist[ 2:length( dist ) ], amplitude = amplitudes )
+  return( df )
+}
+
+
+fft_amplitude1D_example = function(){
+  im = regatta %>% im_crop_square %>% im_gray
+
+  # log-log slope
+  step = 3
+  amp = fft_amplitude1D( im, step )
+  plot( log10( amp$cpp ), log10( amp$amplitude ) )
+  print( length(amp$cpp) ) # number of points
+  print( # slope of log-log plot
+    ( log( amp$amplitude[ 20 ] ) - log( amp$amplitude[ 4 ] ) ) /
+      ( log( amp$cpp[ 20 ] ) - log( amp$cpp[ 4 ] ) )
+    )
+
+  # material editing
+  # im = im_load()
+  ims = list(
+    glossy = bs_apply_preset( im, "glossy" ),
+    oily = bs_apply_preset( im, "oily" ),
+    stained = bs_apply_preset( im, "stained" ),
+    input = im,
+    smooth = bs_apply_preset( im, "smooth" ),
+    matte = bs_apply_preset( im, "matte" )
+  )
+  pplot(ims, layout.mat = matrix(1:6,nrow=2,ncol=3, T))
+
+  dat = data.frame()
+  step = 3
+  types = c( "glossy", "oily", "stained", "original", "smooth", "matte" )
+  for( i in 1:length( ims ) ){
+    amp = fft_amplitude1D( ims[[ i ]], step )
+    dat = rbind( dat, data.frame(
+      type = types[ i ],
+      cpp = amp$cpp,
+      amplitude = amp$amplitude
+    ) )
+  }
+
+  sizeOriginal = 1.2
+  sizeOthers = 0.75
+  linesizes = c( rep( sizeOthers, 3 ), sizeOriginal, rep( sizeOthers, 2 ) )
+  linecols = c(
+    "#eebb22", # glossy
+    "#33ddaa", # oily
+    "#ee5555", # stained
+    "#444444", # original
+    "#2288ff", # smooth
+    "#ff7711"  # matte
+  )
+  fig = ggplot( dat, aes( x = cpp, y = amplitude ) ) +
+    geom_line( aes( color = type, size = type )) +
+    scale_size_manual( values = linesizes ) +
+    scale_color_manual( values = linecols ) +
+    scale_y_log10() +
+    scale_x_log10() +
+    xlab( "Frequency [cycles per picture]" ) +
+    ylab( "Amplitude" ) +
+    theme_tufte( base_family = "Helvetica" ) +
+    theme_cowplot( 26 )
+  plot( fig )
+  savePlot( fig, "output/figures/fourier_amplitudes.png", 400, 3600, 2400 )
+
+
+  # im = im_load()
+  Dec = bandsift_decompose( im )
+  step = 3
+  amp = fft_amplitude1D( calc_L( im ), step )
+  dat = data.frame(
+    type = "I",
+    cpp = amp$cpp,
+    amplitude = amp$amplitude
+  )
+
+  for( i in 1:length( Dec ) ){
+    amp = fft_amplitude1D( Dec[[ i ]], step )
+    dat = rbind( dat, data.frame(
+      type = names( Dec )[ i ],
+      cpp = amp$cpp,
+      amplitude = amp$amplitude
+    ) )
+  }
+
+  sizeI = 1.75
+  sizeD = rep( 0.75, times = length( Dec ) - 1 )
+  sizeL = 1.75
+  linesizes = c( sizeI, sizeD, sizeL )
+
+  fig = ggplot( dat, aes( x = cpp, y = amplitude ) ) +
+    geom_line( aes( color = type, size = type ) ) +
+    scale_size_manual( values = linesizes ) +
+    # scale_color_manual( values = linecols ) +
+    scale_y_log10() +
+    scale_x_log10() +
+    xlab( "Frequency [cycles per picture]" ) +
+    ylab( "Amplitude" ) +
+    theme_tufte( base_family = "Helvetica" ) +
+    theme_cowplot( 26 )
+  plot( fig )
+}
+
+
+fft_noise = function(){
+  height = 128 * 2
+  width  = 128 * 2
+
+  # mean(im^2) = sum(A^2)
+  # replace all A values with sqrt( mean(a^2) )
+  tgt = 0.5
+  A = array( sqrt( tgt^2 / ( height * width ) ), dim = c( height, width, 1 ) )
+  p = array( runif( height * width, min = -pi, max = pi ), dim = c( height, width, 1 ) )
+
+  im2 = Re( fft( A * exp( 1i * p ), inverse = T ) ) %>% rescaling01 %>% nimg
+  # pplot(im2)
+  fft_amplitude1D( im2, 2 ) %>% plot
+}
+
+
+fft_transfer = function( from, to, element ){
+  if( element %in% c( "amplitude", "magnitude" ) ){
+    A = fft_amplitude( from )
+    P = fft_phase( to )
+    im = inv_fft( A * exp( 1i * P ) )  %>% clamping
+  } else if( element == "phase" ){
+    A = fft_amplitude( to )
+    P = fft_phase( from )
+    im = inv_fft( A * exp( 1i * P ) )  %>% clamping
+  }
+  return( im )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# spatial filtering ----
+
+
+
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -1134,7 +1619,7 @@ clamping = function( x, min = 0, max = 1 ){
 #' Calculate a cubic spline
 #' @param x a numeric vector
 #' @param low minimum value of output
-#' @param high maxmum value of output
+#' @param high maximum value of output
 #' @return a numeric vector
 #' @examples
 #' x = seq( from = 0, to = 1, by = 0.01 )

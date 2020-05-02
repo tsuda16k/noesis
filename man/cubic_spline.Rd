@@ -11,7 +11,7 @@ cubic_spline(x, low = 0, high = 1)
 
 \item{low}{minimum value of output}
 
-\item{high}{maxmum value of output}
+\item{high}{maximum value of output}
 }
 \value{
 a numeric vector
