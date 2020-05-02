@@ -110,10 +110,10 @@ plot.nimg = function( x, rescale = FALSE, ... ){
 #' pplot(regatta)
 #' @export
 pplot = function( im, rescale = FALSE ){
-  if( "nimg" %in% class( im ) ){
-    graphics::plot( im )
+  if( any( c( "nimg", "cimg", "pixset" ) %in% class( im ) ) ){
+    graphics::plot( im, rescale = rescale )
   } else {
-    graphics::plot( nimg( im ) )
+    graphics::plot( nimg( im ), rescale = rescale )
   }
 }
 
@@ -270,7 +270,7 @@ cimg2nimg = function( im ){
       }
     })
     return( im )
-  } else if( "cimg" %in% class( im ) ){
+  } else if( any( c( "cimg", "pixset" ) %in% class( im ) ) ){
     im = aperm( im, c( 2, 1, 4, 3 ) ) # (x, y, z, cc) to (y, x, cc, z)
     return( nimg( im[,,,1] ) )
   } else if( "nimg" %in% class( im ) ){
@@ -288,7 +288,7 @@ cimg2nimg = function( im ){
 nimg2cimg = function( im ){
   if( is.list( im ) ){
     im = lapply( im, function(x){
-      if( "cimg" %in% class( x ) ){
+      if( any( c( "cimg", "pixset" ) %in% class( x ) ) ){
         x
       } else {
         nimg2cimg( x )
@@ -296,7 +296,7 @@ nimg2cimg = function( im ){
     })
     return( im )
   } else {
-    if( "cimg" %in% class( im ) ) {
+    if( any( c( "cimg", "pixset" ) %in% class( im ) ) ) {
       return( im )
     } else if( length( dim( im ) ) == 2 ){ # (y, x) to (x, y)
       return( imager::as.cimg( t( im ) ) )
@@ -420,7 +420,7 @@ im_cy = function( im ){
 #' @export
 get_channel = function( im, channel ){
   if( is.numeric( channel ) ){
-    return( nimg( im[ , , channel, drop = F ] ) )
+    return( nimg( im[ , , channel, drop = FALSE ] ) )
   } else {
     return( get_channel( im, match( channel, c( "R", "G", "B", "A" ) ) ) )
   }
@@ -472,7 +472,7 @@ get_A = function( im ){
 split_color = function( im ){
   ls = list()
   for( i in 1:dim( im )[ 3 ] ){
-    ls = c( ls, list( nimg( im[ , , i, drop = F ] ) ) )
+    ls = c( ls, list( nimg( im[ , , i, drop = FALSE ] ) ) )
   }
   return( ls )
 }
@@ -615,10 +615,10 @@ im_pad = function( im, n, method = "mirror" ){
 im_shift = function( im, axis = "x", lag = 0 ){
   if( axis == "x" ){
     index = vec_shift( 1:dim(im)[2], lag )
-    im = im[ ,index, , drop = F ]
+    im = im[ ,index, , drop = FALSE ]
   } else if( axis == "y" ){
     index = vec_shift( 1:dim(im)[1], lag )
-    im = im[ index, , , drop = F ]
+    im = im[ index, , , drop = FALSE ]
   }
   return( nimg( im ) )
 }
@@ -647,7 +647,7 @@ im_crop = function( im, margin ){
     bottom = margin[ 3 ]
     left = margin[ 4 ]
   }
-  im = im[ (1 + top):(im_height( im ) - bottom), (1 + left):(im_width( im ) - right), , drop = F ]
+  im = im[ (1 + top):(im_height( im ) - bottom), (1 + left):(im_width( im ) - right), , drop = FALSE ]
   return( nimg( im ) )
 }
 
@@ -812,6 +812,393 @@ im_combine = function( im1, im2, y = 0, x = 0, alpha = FALSE, background = 1 ){
     A[ y2:( y2 + im_height( im2 ) - 1 ), x2:( x2 + im_width( im2 ) - 1 ), 1 ] = 1
     return( merge_color( c( split_color( im ), list( A ) ) ) )
   }
+}
+
+
+#' Threshold grayscale image
+#' @param im an image
+#' @param thr a threshold
+#' @param approx skip
+#' @param adjust adjust the automatic threshold
+#' @return an image
+#' @examples
+#' pplot(im_threshold(get_R(regatta), thr = 0.6))
+#' @export
+im_threshold = function( im, thr = "auto", approx = TRUE, adjust = 1 ){
+  cimg2nimg( imager::threshold( nimg2cimg( im ), thr, approx, adjust ) )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# color space ----
+
+
+#' sRGB to linear RGB conversion
+#' @param im an image
+#' @return an image
+#' @export
+sRGB2RGB = function( im ){
+  mask = im < 0.04045
+  im[ mask ] = im[ mask ] / 12.92
+  im[ !mask ] = ( ( im[ !mask ] + 0.055 ) / 1.055 )^2.4
+  return( im )
+  # cim = boats
+  # im = boats %>% cimg2array
+  # imdt = boats %>% cimg2dt
+  # system.time( for( i in 1:100 ) sRGB2RGB( cim ) )
+  # system.time( for( i in 1:100 ) sRGB2RGB( im ) )
+  # system.time( for( i in 1:100 ) sRGB2RGB( imdt ) )
+}
+
+
+#' linear RGB to sRGB conversion
+#' @param im an image
+#' @return an image
+#' @export
+RGB2sRGB = function( im ){
+  mask = im < 0.0031308
+  im[ mask ] = im[ mask ] * 12.92
+  im[ !mask ] = 1.055 * im[ !mask ]^( 1 / 2.4 ) - 0.055
+  return( im )
+}
+
+
+#' sRGB to HSL conversion
+#' @param im an image
+#' @return an image
+#' @export
+sRGB2HSL = function( im ){
+  cimg = nimg2cimg( im_tricolored( im ) )
+  M = pmax( imager::R( cimg ), imager::G( cimg ), imager::B( cimg ) )
+  m = pmin( imager::R( cimg ), imager::G( cimg ), imager::B( cimg ) )
+  C = M - m
+  # calculate H
+  hue = imager::cimg( array( 0, c( dim( cimg )[ 1:3 ], 1 ) ) )
+  H1 = ( imager::G( cimg ) - imager::B( cimg ) ) / C
+  H1[ , , 1, 1 ] = H1[ , , 1, 1 ] + ifelse( H1[ , , 1, 1 ] < 0, 6, 0 )
+  H2 = ( imager::B( cimg ) - imager::R( cimg ) ) / C + 2
+  H3 = ( imager::R( cimg ) - imager::G( cimg ) ) / C + 4
+  hue[ M == imager::R( cimg ) ] = H1[ M == imager::R( cimg ) ]
+  hue[ M == imager::G( cimg ) ] = H2[ M == imager::G( cimg ) ]
+  hue[ M == imager::B( cimg ) ] = H3[ M == imager::B( cimg ) ]
+  hue[ ( imager::R( cimg ) == imager::G( cimg ) ) & ( imager::R( cimg ) == imager::B( cimg ) ) ] = 0
+  hue = hue * 60
+  hue = hue %% 360
+  # calculate L and S
+  L = ( M + m ) / 2
+  S = imager::cimg( array( 0, c( dim( cimg )[ 1:3 ], 1 ) ) )
+  S = ( M - m ) / ( 1 - abs( M + m - 1 ) )
+  cimg = imager::imappend( list( hue, S, L ), axis = "c" )
+  return( cimg2nimg( cimg ) )
+}
+
+
+#' RGB to XYZ conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+RGB2XYZ = function( im, use.D65 = TRUE ){
+  if( use.D65 ){
+    X = 0.4124564 * get_R( im ) + 0.3575761 * get_G( im ) + 0.1804375 * get_B( im )
+    Y = 0.2126729 * get_R( im ) + 0.7151522 * get_G( im ) + 0.0721750 * get_B( im )
+    Z = 0.0193339 * get_R( im ) + 0.1191920 * get_G( im ) + 0.9503041 * get_B( im )
+  } else {
+    X = 0.4360747 * get_R( im ) + 0.3850649 * get_G( im ) + 0.1430804 * get_B( im )
+    Y = 0.2225045 * get_R( im ) + 0.7168786 * get_G( im ) + 0.0606169 * get_B( im )
+    Z = 0.0139322 * get_R( im ) + 0.0971045 * get_G( im ) + 0.7141733 * get_B( im )
+  }
+  return( merge_color( list( X, Y, Z ) ) )
+}
+
+
+#' XYZ to RGB conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+XYZ2RGB = function( im, use.D65 = TRUE ){
+  if( use.D65 ){
+    R =  3.24045484 * get_R( im ) - 1.5371389 * get_G( im ) - 0.49853155 * get_B( im )
+    G = -0.96926639 * get_R( im ) + 1.8760109 * get_G( im ) + 0.04155608 * get_B( im )
+    B =  0.05564342 * get_R( im ) - 0.2040259 * get_G( im ) + 1.05722516 * get_B( im )
+  } else {
+    R =  3.13385637 * get_R( im ) - 1.6168668 * get_G( im ) - 0.49061477 * get_B( im )
+    G = -0.97876856 * get_R( im ) + 1.9161416 * get_G( im ) + 0.03345412 * get_B( im )
+    B =  0.07194517 * get_R( im ) - 0.2289913 * get_G( im ) + 1.40524267 * get_B( im )
+  }
+  return( merge_color( list( R, G, B ) ) )
+}
+
+
+#' sRGB to XYZ conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+sRGB2XYZ = function( im, use.D65 = TRUE ){
+  im %>% sRGB2RGB %>% RGB2XYZ( use.D65 )
+}
+
+
+#' XYZ to sRGB conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+XYZ2sRGB = function( im, use.D65 = TRUE ){
+  im %>% XYZ2RGB( use.D65 ) %>% RGB2sRGB
+}
+
+
+#' XYZ to Lab conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+XYZ2Lab = function( im, use.D65 = TRUE ){
+  # reference white
+  if( use.D65 ){
+    white = c( 0.95047, 1, 1.08883 )
+  } else {
+    white = c( 0.96420, 1, 0.82491 )
+  }
+  im[ ,,1 ] = im[ ,,1, drop = FALSE ] / white[ 1 ]
+  im[ ,,3 ] = im[ ,,3, drop = FALSE ] / white[ 3 ]
+  #
+  mask = 24389 * im > 216
+  im[ mask ] = im[ mask ]^( 1 / 3 )
+  im[ !mask ] = ( 24389 * im[ !mask ] / 27 + 16 ) / 116
+  fx = im[ ,,1, drop = FALSE ]
+  fy = im[ ,,2, drop = FALSE ]
+  fz = im[ ,,3, drop = FALSE ]
+  #
+  L = ( 116 * fy - 16 )
+  a = 500 * ( fx - fy )
+  b = 200 * ( fy - fz )
+  return( merge_color( list( L, a, b ) ) )
+}
+
+
+#' Lab to XYZ conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+Lab2XYZ = function( im, use.D65 = TRUE ){
+  eta = 216 / 24389
+  kappa = 24389 / 27
+  #
+  fy = ( im[,,1, drop = FALSE ] + 16 ) / 116
+  fx = 0.002 * im[,,2, drop = FALSE ] + fy
+  fz = fy - 0.005 * im[,,3, drop = FALSE ]
+  # x = fx^3 > eta ? fx^3 : ( 116 * fx - 16 ) / kappa
+  mask = fx^3 > eta
+  fx[ mask ] = fx[ mask ]^3
+  fx[ !mask ] = ( 116 * fx[ !mask ] - 16 ) / kappa
+  # y = L > 8 ? ( ( L + 16 ) / 116 )^3 : L / kappa
+  L = im[,,1, drop = FALSE ]
+  mask = L > 8
+  L[ mask ] = ( ( L[ mask ] + 16 ) / 116 )^3
+  L[ !mask ] = L[ !mask ] / kappa
+  # z = fz^3 > eta ? fz^3 : ( 116 * fz - 16 ) / kappa
+  mask = fz^3 > eta
+  fz[ mask ] = fz[ mask ]^3
+  fz[ !mask ] = ( 116 * fz[ !mask ] - 16 ) / kappa
+  # reference white
+  if( use.D65 ){
+    white = c( 0.95047, 1, 1.08883 )
+  } else {
+    white = c( 0.96420, 1, 0.82491 )
+  }
+  fx = fx * white[ 1 ]
+  fz = fz * white[ 3 ]
+  return( merge_color( list( fx, L, fz ) ) )
+}
+
+
+#' sRGB to Lab conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+sRGB2Lab = function( im, use.D65 = TRUE ){
+  XYZ2Lab( sRGB2XYZ( im, use.D65 ), use.D65 )
+}
+
+
+#' Lab to sRGB conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+Lab2sRGB = function( im, use.D65 = TRUE ){
+  XYZ2sRGB( Lab2XYZ( im, use.D65 ), use.D65 )
+}
+
+
+#' RGB to Lab conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+RGB2Lab = function( im, use.D65 = TRUE ){
+  im %>% RGB2XYZ( use.D65 ) %>% XYZ2Lab( use.D65 )
+}
+
+
+#' Lab to RGB conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+Lab2RGB = function( im, use.D65 = TRUE ){
+  im %>% Lab2XYZ( use.D65 ) %>% XYZ2RGB( use.D65 )
+}
+
+
+#' RGB to YUV conversion
+#' @param im an image
+#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
+#' @return an image
+#' @source \url{ https://en.wikipedia.org/wiki/YUV }
+#' @export
+RGB2YUV = function( im, use.B601 = FALSE ){
+  if( use.B601 ){
+    Y =   0.299   * get_R( im ) + 0.587   * get_G( im ) + 0.114   * get_B( im )
+    U = - 0.14713 * get_R( im ) - 0.28886 * get_G( im ) + 0.436   * get_B( im )
+    V =   0.615   * get_R( im ) - 0.51499 * get_G( im ) - 0.10001 * get_B( im )
+  } else {
+    Y =   0.2126  * get_R( im ) + 0.7152  * get_G( im ) + 0.0722  * get_B( im )
+    U = - 0.09991 * get_R( im ) - 0.33609 * get_G( im ) + 0.436   * get_B( im )
+    V =   0.615   * get_R( im ) - 0.55861 * get_G( im ) - 0.05639 * get_B( im )
+  }
+  return( merge_color( list( Y, U, V ) ) )
+}
+
+
+#' YUV to RGB conversion
+#' @param im an image
+#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
+#' @return an image
+#' @source \url{ https://en.wikipedia.org/wiki/YUV }
+#' @export
+YUV2RGB = function( im, use.B601 = FALSE ){
+  if( use.B601 ){
+    R = 1 * get_R( im ) + 0       * get_G( im ) + 1.13983 * get_B( im )
+    G = 1 * get_R( im ) - 0.39465 * get_G( im ) - 0.58060 * get_B( im )
+    B = 1 * get_R( im ) + 2.03211 * get_G( im ) + 0       * get_B( im )
+  } else {
+    R = 1 * get_R( im ) + 0       * get_G( im ) + 1.28033 * get_B( im )
+    G = 1 * get_R( im ) - 0.21482 * get_G( im ) - 0.38059 * get_B( im )
+    B = 1 * get_R( im ) + 2.12798 * get_G( im ) + 0       * get_B( im )
+  }
+  return( merge_color( list( R, G, B ) ) )
+}
+
+
+#' sRGB to YUV conversion
+#' @param im an image
+#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
+#' @return an image
+#' @source \url{ https://en.wikipedia.org/wiki/YUV }
+#' @export
+sRGB2YUV = function( im, use.B601 = FALSE ){
+  im %>% sRGB2RGB %>% RGB2YUV( use.B601 )
+}
+
+
+#' YUV to sRGB conversion
+#' @param im an image
+#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
+#' @return an image
+#' @source \url{ https://en.wikipedia.org/wiki/YUV }
+#' @export
+YUV2sRGB = function( im,  use.B601 = FALSE ){
+  im %>% YUV2RGB( use.B601 ) %>% RGB2sRGB
+}
+
+
+#' Visualize CIELAB image
+#' @param im an image
+#' @param scale either TRUE or FALSE (default)
+#' @return a list of images
+#' @export
+CIELAB_visualize = function( im, scale = FALSE ){
+  lab = sRGB2Lab( im )
+  L = get_R( lab )
+  A = get_G( lab )
+  B = get_B( lab )
+  ab_max = max( abs( A ), abs( B ) )
+
+  LM = array( mean( L ), dim = dim( L ) )
+  C0 = array( 0, dim = dim( L ) )
+  if( scale ){
+    A = clamping( A * 90 / ab_max, -98, 98 )
+    B = clamping( B * 90 / ab_max, -98, 98 )
+  }
+  im_L = merge_color( list( L, C0, C0 ) ) %>% Lab2sRGB
+  im_a = merge_color( list( LM, A, C0 ) ) %>% Lab2sRGB
+  im_b = merge_color( list( LM, C0, B ) ) %>% Lab2sRGB
+  return( list( L = im_L, a = im_a, b = im_b ) )
+}
+
+
+#' Convert to grayscale
+#' @param im an image
+#' @param tricolored if TRUE, returned image has three color channels
+#' @return an image
+#' @examples
+#' pplot(im_gray(regatta))
+#' @export
+im_gray = function( im, tricolored = FALSE ){
+  if( im_nc( im ) < 2 ){
+    return( im )
+  }
+  lab = sRGB2Lab( im )
+  L = get_R( lab )
+  C0 = array( 0, dim = dim( L ) )
+  im = merge_color( list( L, C0, C0 ) ) %>% Lab2sRGB
+  if( ! tricolored ){
+    im = get_R( im )
+  }
+  return( im )
+}
+
+
+#' Get L channel of CIELAB color space
+#' @param im an image
+#' @param scale if TRUE (default), L value is divided by 100
+#' @return an image
+#' @examples
+#' pplot(get_L(regatta))
+#' @export
+get_L = function( im, scale = TRUE ){
+  if( im_nc( im ) == 1 ){
+    return( im )
+  } else if( im_nc( im ) == 2 ){
+    return( get_R( im ) )
+  }
+  if( scale ){
+    return( get_R( sRGB2Lab( im ) ) / 100 )
+  } else {
+    return( get_R( sRGB2Lab( im ) ) )
+  }
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Stats ----
+
+
+im_diff = function( im1, im2 ){
+  if( imager::is.cimg( im1 ) ){
+    im1 = cimg2nimg( im1 )
+  }
+  if( imager::is.cimg( im2 ) ){
+    im2 = cimg2nimg( im2 )
+  }
+  return( mean( ( im1 - im2 )^2 ) )
 }
 
 
