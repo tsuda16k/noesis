@@ -1023,7 +1023,7 @@ fft_phase_scramble = function( im ){
     return( out )
   }
   #
-  imf = fft( im ) / length( im )
+  imf = stats::fft( im ) / length( im )
   A = abs( imf )
   P = atan2( Im( imf ), Re( imf ) )
   #
@@ -1031,7 +1031,7 @@ fft_phase_scramble = function( im ){
   w = im_width( im )
   cy = floor( h / 2 ) + 1
   cx = floor( w / 2 ) + 1
-  p = array( runif( prod( im_size( im ) ), min = -pi, max = pi ), dim = im_size( im ) )
+  p = array( stats::runif( prod( im_size( im ) ), min = -pi, max = pi ), dim = im_size( im ) )
   p[ 1, 1 ] = 0
   if( im_height( im ) %% 2 == 1 & im_width( im ) %% 2 == 1 ){ # odd, odd
     p[ 2:cy, 1 ] = -p[ h:(cy+1), 1 ]
@@ -1052,7 +1052,7 @@ fft_phase_scramble = function( im ){
     p[ (cy+1):h, 2:(cx-1) ] = -array( rev( p[ 2:(cy-1), (cx+1):w ] ), dim = dim( p[ (cy+1):h, 2:(cx-1) ] ) )
   }
   dim( p ) = c( dim( p ), 1 )
-  im2 = Re( fft( A * exp( 1i * p ), inverse = T ) ) %>% clamping
+  im2 = Re( stats::fft( A * exp( 1i * p ), inverse = T ) ) %>% clamping
   # imf2 = complex( real = A * cos( p ), imaginary = A * sin( p ) )
   # im2 = Re( stats::fft( array( imf2, dim = c( im_size( im ), 1, 1 ) ), inverse = T ) )
   return( nimg( im2 ) )
@@ -1249,104 +1249,104 @@ fft_amplitude1D = function( im, step = 2, mask = F ){
 }
 
 
-fft_amplitude1D_example = function(){
-  im = regatta %>% im_crop_square %>% im_gray
-
-  # log-log slope
-  step = 3
-  amp = fft_amplitude1D( im, step )
-  plot( log10( amp$cpp ), log10( amp$amplitude ) )
-  print( length(amp$cpp) ) # number of points
-  print( # slope of log-log plot
-    ( log( amp$amplitude[ 20 ] ) - log( amp$amplitude[ 4 ] ) ) /
-      ( log( amp$cpp[ 20 ] ) - log( amp$cpp[ 4 ] ) )
-    )
-
-  # material editing
-  # im = im_load()
-  ims = list(
-    glossy = bs_apply_preset( im, "glossy" ),
-    oily = bs_apply_preset( im, "oily" ),
-    stained = bs_apply_preset( im, "stained" ),
-    input = im,
-    smooth = bs_apply_preset( im, "smooth" ),
-    matte = bs_apply_preset( im, "matte" )
-  )
-  pplot(ims, layout.mat = matrix(1:6,nrow=2,ncol=3, T))
-
-  dat = data.frame()
-  step = 3
-  types = c( "glossy", "oily", "stained", "original", "smooth", "matte" )
-  for( i in 1:length( ims ) ){
-    amp = fft_amplitude1D( ims[[ i ]], step )
-    dat = rbind( dat, data.frame(
-      type = types[ i ],
-      cpp = amp$cpp,
-      amplitude = amp$amplitude
-    ) )
-  }
-
-  sizeOriginal = 1.2
-  sizeOthers = 0.75
-  linesizes = c( rep( sizeOthers, 3 ), sizeOriginal, rep( sizeOthers, 2 ) )
-  linecols = c(
-    "#eebb22", # glossy
-    "#33ddaa", # oily
-    "#ee5555", # stained
-    "#444444", # original
-    "#2288ff", # smooth
-    "#ff7711"  # matte
-  )
-  fig = ggplot( dat, aes( x = cpp, y = amplitude ) ) +
-    geom_line( aes( color = type, size = type )) +
-    scale_size_manual( values = linesizes ) +
-    scale_color_manual( values = linecols ) +
-    scale_y_log10() +
-    scale_x_log10() +
-    xlab( "Frequency [cycles per picture]" ) +
-    ylab( "Amplitude" ) +
-    theme_tufte( base_family = "Helvetica" ) +
-    theme_cowplot( 26 )
-  plot( fig )
-  savePlot( fig, "output/figures/fourier_amplitudes.png", 400, 3600, 2400 )
-
-
-  # im = im_load()
-  Dec = bandsift_decompose( im )
-  step = 3
-  amp = fft_amplitude1D( calc_L( im ), step )
-  dat = data.frame(
-    type = "I",
-    cpp = amp$cpp,
-    amplitude = amp$amplitude
-  )
-
-  for( i in 1:length( Dec ) ){
-    amp = fft_amplitude1D( Dec[[ i ]], step )
-    dat = rbind( dat, data.frame(
-      type = names( Dec )[ i ],
-      cpp = amp$cpp,
-      amplitude = amp$amplitude
-    ) )
-  }
-
-  sizeI = 1.75
-  sizeD = rep( 0.75, times = length( Dec ) - 1 )
-  sizeL = 1.75
-  linesizes = c( sizeI, sizeD, sizeL )
-
-  fig = ggplot( dat, aes( x = cpp, y = amplitude ) ) +
-    geom_line( aes( color = type, size = type ) ) +
-    scale_size_manual( values = linesizes ) +
-    # scale_color_manual( values = linecols ) +
-    scale_y_log10() +
-    scale_x_log10() +
-    xlab( "Frequency [cycles per picture]" ) +
-    ylab( "Amplitude" ) +
-    theme_tufte( base_family = "Helvetica" ) +
-    theme_cowplot( 26 )
-  plot( fig )
-}
+# fft_amplitude1D_example = function(){
+#   im = regatta %>% im_crop_square %>% im_gray
+#
+#   # log-log slope
+#   step = 3
+#   amp = fft_amplitude1D( im, step )
+#   plot( log10( amp$cpp ), log10( amp$amplitude ) )
+#   print( length(amp$cpp) ) # number of points
+#   print( # slope of log-log plot
+#     ( log( amp$amplitude[ 20 ] ) - log( amp$amplitude[ 4 ] ) ) /
+#       ( log( amp$cpp[ 20 ] ) - log( amp$cpp[ 4 ] ) )
+#   )
+#
+#   # material editing
+#   # im = im_load()
+#   ims = list(
+#     glossy = bs_apply_preset( im, "glossy" ),
+#     oily = bs_apply_preset( im, "oily" ),
+#     stained = bs_apply_preset( im, "stained" ),
+#     input = im,
+#     smooth = bs_apply_preset( im, "smooth" ),
+#     matte = bs_apply_preset( im, "matte" )
+#   )
+#   pplot(ims, layout.mat = matrix(1:6,nrow=2,ncol=3, T))
+#
+#   dat = data.frame()
+#   step = 3
+#   types = c( "glossy", "oily", "stained", "original", "smooth", "matte" )
+#   for( i in 1:length( ims ) ){
+#     amp = fft_amplitude1D( ims[[ i ]], step )
+#     dat = rbind( dat, data.frame(
+#       type = types[ i ],
+#       cpp = amp$cpp,
+#       amplitude = amp$amplitude
+#     ) )
+#   }
+#
+#   sizeOriginal = 1.2
+#   sizeOthers = 0.75
+#   linesizes = c( rep( sizeOthers, 3 ), sizeOriginal, rep( sizeOthers, 2 ) )
+#   linecols = c(
+#     "#eebb22", # glossy
+#     "#33ddaa", # oily
+#     "#ee5555", # stained
+#     "#444444", # original
+#     "#2288ff", # smooth
+#     "#ff7711"  # matte
+#   )
+#   fig = ggplot( dat, aes( x = cpp, y = amplitude ) ) +
+#     geom_line( aes( color = type, size = type )) +
+#     scale_size_manual( values = linesizes ) +
+#     scale_color_manual( values = linecols ) +
+#     scale_y_log10() +
+#     scale_x_log10() +
+#     xlab( "Frequency [cycles per picture]" ) +
+#     ylab( "Amplitude" ) +
+#     theme_tufte( base_family = "Helvetica" ) +
+#     theme_cowplot( 26 )
+#   plot( fig )
+#   savePlot( fig, "output/figures/fourier_amplitudes.png", 400, 3600, 2400 )
+#
+#
+#   # im = im_load()
+#   Dec = bandsift_decompose( im )
+#   step = 3
+#   amp = fft_amplitude1D( calc_L( im ), step )
+#   dat = data.frame(
+#     type = "I",
+#     cpp = amp$cpp,
+#     amplitude = amp$amplitude
+#   )
+#
+#   for( i in 1:length( Dec ) ){
+#     amp = fft_amplitude1D( Dec[[ i ]], step )
+#     dat = rbind( dat, data.frame(
+#       type = names( Dec )[ i ],
+#       cpp = amp$cpp,
+#       amplitude = amp$amplitude
+#     ) )
+#   }
+#
+#   sizeI = 1.75
+#   sizeD = rep( 0.75, times = length( Dec ) - 1 )
+#   sizeL = 1.75
+#   linesizes = c( sizeI, sizeD, sizeL )
+#
+#   fig = ggplot( dat, aes( x = cpp, y = amplitude ) ) +
+#     geom_line( aes( color = type, size = type ) ) +
+#     scale_size_manual( values = linesizes ) +
+#     # scale_color_manual( values = linecols ) +
+#     scale_y_log10() +
+#     scale_x_log10() +
+#     xlab( "Frequency [cycles per picture]" ) +
+#     ylab( "Amplitude" ) +
+#     theme_tufte( base_family = "Helvetica" ) +
+#     theme_cowplot( 26 )
+#   plot( fig )
+# }
 
 
 fft_noise = function(){
@@ -1357,9 +1357,9 @@ fft_noise = function(){
   # replace all A values with sqrt( mean(a^2) )
   tgt = 0.5
   A = array( sqrt( tgt^2 / ( height * width ) ), dim = c( height, width, 1 ) )
-  p = array( runif( height * width, min = -pi, max = pi ), dim = c( height, width, 1 ) )
+  p = array( stats::runif( height * width, min = -pi, max = pi ), dim = c( height, width, 1 ) )
 
-  im2 = Re( fft( A * exp( 1i * p ), inverse = T ) ) %>% rescaling01 %>% nimg
+  im2 = Re( stats::fft( A * exp( 1i * p ), inverse = T ) ) %>% rescaling01 %>% nimg
   # pplot(im2)
   fft_amplitude1D( im2, 2 ) %>% plot
 }

@@ -4,10 +4,21 @@
 \alias{fft_lowpass_kernel}
 \title{Get lowpass kernel}
 \usage{
-fft_lowpass_kernel(kernel, height, width, cutoff, order = 3)
+fft_lowpass_kernel(kernel, height, width, cutoff, order = 4)
 }
 \arguments{
 \item{kernel}{either "ideal", "gauss", "butterworth", or "dc"}
+
+\item{height}{image height}
+
+\item{width}{image width}
+
+\item{cutoff}{cutoff frequency}
+
+\item{order}{order of butterworth filter}
+}
+\value{
+an image
 }
 \description{
 Get lowpass kernel
