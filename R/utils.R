@@ -1383,7 +1383,257 @@ fft_transfer = function( from, to, element ){
 # spatial filtering ----
 
 
+#' Box blur
+#' @param im an image
+#' @param radius radius
+#' @return an image
+#' @examples
+#' pplot(box_blur(regatta, 10))
+#' @export
+box_blur = function( im, radius ){
+  if( radius < 1 ){
+    warning( "radius should be equal to or larger than 1.")
+    return( im )
+  }
+  r = radius
+  if( im_nc( im ) != 1 ){
+    imlist = list()
+    for( i in 1:im_nc( im ) ){
+      imlist = c( imlist, list( box_blur( get_channel( im, i ), r ) ) )
+    }
+    return( merge_color( imlist ) )
+  }
+  L = 2 * r + 1
+  width = im_width( im )
+  height = im_height( im )
+  im = im_pad( im, r, method = "mirror" )
+  out = array( 0.0, dim( im ) )
+  cumsum = rowSums( im[ , 1:(2*r), ] )
+  # i = r + 1
+  cumsum = cumsum + im[ ,r + 1 + r, ]
+  out[ , r + 1, ] = cumsum / L
+  for( i in ( r + 2 ):( width + r ) ){
+    cumsum = cumsum + im[ ,i + r, ] - im[ ,i - r - 1, ]
+    out[ , i, ] = cumsum / L
+  }
+  im = out
+  cumsum = colSums( im[ 1:(2*r), , ] )
+  cumsum = cumsum + im[ r + 1 + r, , ]
+  out[ r + 1, , ] = cumsum / L
+  for( i in ( r + 2 ):( height + r ) ){
+    cumsum = cumsum + im[ i + r, , ] - im[ i - r - 1, , ]
+    out[ i, , ] = cumsum / L
+  }
+  out = im_crop( out, r )
+  return( out )
+}
 
+
+#' Box variance
+#' @param im an image
+#' @param radius radius
+#' @return an image
+#' @examples
+#' pplot(box_variance(regatta, 3), rescale = TRUE)
+#' @export
+box_variance = function( im, radius ){
+  box_blur( im^2, radius ) - box_blur( im, radius )^2
+}
+
+
+#' Create a Gaussian kernel
+#' @param sd sd of the normal distribution
+#' @param radius kernel radius. kernel diameter is 2 * radius + 1.
+#' @return an image
+#' @examples
+#' pplot(gauss_kernel(10), rescale = TRUE)
+#' pplot(gauss_kernel(sd = 10, radius = 20), rescale = TRUE)
+#' @export
+gauss_kernel = function( sd, radius = round( 2.5 * sd ) ){
+  if( sd < 0.2 ){
+    warning( "sd must be equal to or larger than 0.2")
+    return( NULL )
+  }
+  L = 2 * radius + 1
+  matx = matrix( stats::dnorm( 1:L, mean = radius + 1, sd = sd ), nrow = L, ncol = L, byrow = FALSE )
+  maty = matrix( stats::dnorm( 1:L, mean = radius + 1, sd = sd ), nrow = L, ncol = L, byrow = TRUE )
+  mat = matx * maty
+  mat = mat / sum( mat )
+  return( nimg( array( mat, c( L, L, 1 ) ) ) )
+}
+
+
+#' Create a gabor filter kernel
+#' @param ksize the size of the gabor kernel. should be odd number (if not, incremented by one).
+#' @param sigma the standard deviation of the Gaussian function
+#' @param lambd the wavelength of the sinusoidal factor
+#' @param theta the orientation of the normal to the parallel stripes of the Gabor function
+#' @param psi the phase offset
+#' @param gamma the spatial aspect ratio
+#' @param normalize if TRUE (default), kernel is normalized (the zero-summing normalization)
+#' @param mask if TRUE, circular mask is applied.
+#' @examples
+#' gb = gabor_kernel( ksize = 61 )
+#' pplot(gb, rescale = TRUE)
+#' gb = gabor_kernel( ksize = 61, theta = pi/6 )
+#' pplot(gb, rescale = TRUE)
+#' @export
+gabor_kernel = function( ksize = sigma * 6, sigma = min( ksize ) / 6, lambd = min( ksize ) / 4,
+                         theta = 0, psi = 0, gamma = 1, normalize = TRUE, mask = FALSE ){
+  if( ksize %% 2 == 0 ){
+    ksize = ksize + 1
+  }
+  if( length( ksize ) == 1 ){
+    ksize = c( ksize, ksize )
+  }
+  sigmaX = sigma
+  sigmaY = sigma / gamma
+  nstds = 3
+  c = cos( theta )
+  s = sin( theta )
+  xmax = ifelse( ksize[ 1 ] > 0, floor( ksize[ 1 ] / 2 ),
+                 round( max( abs( nstds * sigmaX * c ), abs( nstds * sigmaY * s ) ) ) )
+  ymax = ifelse( ksize[ 2 ] > 0, floor( ksize[ 2 ] / 2 ),
+                 round( max( abs( nstds * sigmaX * s ), abs( nstds * sigmaY * c ) ) ) )
+  xmin = -xmax
+  ymin = -ymax
+  scale = 1
+  ex = -0.5 / ( sigmaX * sigmaX )
+  ey = -0.5 / ( sigmaY * sigmaY )
+  cscale = pi * 2 / lambd
+
+  ix = matrix( xmin:xmax, nrow = ymax - ymin + 1, ncol = xmax - xmin + 1, byrow = TRUE )
+  iy = matrix( ymin:ymax, nrow = ymax - ymin + 1, ncol = xmax - xmin + 1 )
+  xr =  ix * c + iy * s
+  yr = -ix * s + iy * c
+
+  kernel = scale * exp( ex * xr * xr + ey * yr * yr ) * cos( cscale * xr - psi )
+
+  if( mask ){
+    size = max( ksize )
+    cx = cy = ceiling( size / 2 )
+    u = matrix( 1:size - cx, ncol = size, nrow = size, byrow = TRUE )
+    v = matrix( 1:size - cy, ncol = size, nrow = size, byrow = FALSE )
+    D = u^2 + v^2
+    kernel[ D > (size/2)^2 ] = 0
+  }
+
+  if ( normalize ){
+    psum = sum( kernel[ kernel > 0 ] )
+    kernel[ kernel > 0 ] = kernel[ kernel > 0 ] / psum
+    nsum = sum( kernel[ kernel < 0 ] )
+    kernel[ kernel < 0 ] = kernel[ kernel < 0 ] / abs( nsum )
+  }
+
+  return( nimg( kernel ) )
+}
+
+
+#' Apply the guided filter
+#' @param p an image
+#' @param radius filter radius
+#' @param epsilon epsilon parameter
+#' @param I guide image
+#' @return an image
+#' @examples
+#' pplot(guided_filter(regatta,8))
+#' @export
+guided_filter = function( p, radius, epsilon = 0.1, I = p ){
+  if( radius < 1 ){
+    warning( "radius should be equal to or larger than 1.")
+    return( p )
+  }
+
+  I_mean = box_blur( I, radius )
+  I_var = box_variance( I, radius )
+  p_mean = box_blur( p, radius )
+
+  a = ( box_blur( I * p, radius ) - I_mean * p_mean ) / ( I_var + epsilon )
+  b = p_mean - a * I_mean
+
+  a_mean = box_blur( a, radius )
+  b_mean = box_blur( b, radius )
+
+  q = a_mean * I + b_mean
+  return( q )
+}
+
+
+#' Apply statistical filter
+#' @param im an image
+#' @param radius kernel radius
+#' @param FUN e.g., min, max, median, mean, var
+#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
+#' @return an image
+#' @examples
+#' pplot(stat_filter(regatta, 1, min))
+#' @export
+stat_filter = function( im, radius, FUN, pad.method = "mirror" ){
+  if( radius < 1 ){
+    warning( "radius should be equal to or larger than 1.")
+    return( im )
+  }
+
+  if( im_nc( im ) > 1 ){
+    imlist = list()
+    for( i in 1:im_nc( im ) ){
+      imlist = c( imlist, list( stat_filter( get_channel( im, i ), radius, FUN, pad.method ) ) )
+    }
+    return( merge_color( imlist ) )
+  }
+
+  im = im_pad( im, radius, method = pad.method )[,,]
+  im2 = im
+  for( cy in ( 1 + radius ):( im_height( im ) - radius ) ){
+    for( cx in ( 1 + radius ):( im_width( im ) - radius ) ){
+      im2[ cy, cx ] = FUN(
+        as.vector( im[ ( cy - radius ):( cy + radius ), ( cx - radius ):( cx + radius ) ] )
+      )
+    }
+  }
+  im2 = im_crop( nimg( im2 ), radius )
+  return( im2 )
+
+  # im = im_pad( im, radius, method = pad.method )[,,]
+  # im2 = matrix2list( im )
+  # for( cy in ( 1 + radius ):( im_height( im ) - radius ) ){
+  #   for( cx in ( 1 + radius ):( im_width( im ) - radius ) ){
+  #     im2[[ cx ]][ cy ] = FUN(
+  #       as.vector( im[ ( cy - radius ):( cy + radius ), ( cx - radius ):( cx + radius ) ] )
+  #     )
+  #   }
+  # }
+  # im2 = list2matrix( im2 )
+  # im2 = im_crop( nimg( im2 ), radius )
+  # return( im2 )
+}
+
+
+#' Convolve an image
+#' @param im an image
+#' @param kernel filter image
+#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
+#' @return an image
+#' @examples
+#' pplot(im_conv(regatta, gauss_kernel(sd = 2)))
+#' @export
+im_conv = function( im, kernel, pad.method = "mirror" ){
+  if( is.null( kernel ) ){
+    return( im )
+  }
+  if( im_nc( im ) > 1 ){
+    imlist = list()
+    for( i in 1:im_nc( im ) ){
+      imlist = c( imlist, list( im_conv( get_channel( im, i ), kernel, pad.method ) ) )
+    }
+    return( merge_color( imlist ) )
+  }
+  npad = floor( max( dim( kernel )[ 1:2 ] ) / 2 )
+  im = im_pad( im, n = npad, method = pad.method )
+  im = imager::convolve( nimg2cimg( im ), nimg2cimg( kernel ) )
+  im = imager::crop.borders( im, nPix = npad )
+  return( cimg2nimg( im ) )
+}
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -1685,6 +1935,20 @@ pow = function( x, p ){
 #' @export
 MinMax = MaxMin = function( x ){
   return( max( x ) - min( x ) )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# data structure ----
+
+
+matrix2list = function( x ){
+  lapply(seq_len(ncol(x)), function(i) x[,i])
+}
+
+
+list2matrix = function( x ){
+  matrix(unlist(x, use.names = FALSE), ncol = length( x ), byrow = FALSE)
 }
 
 
