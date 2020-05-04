@@ -1,5 +1,6 @@
 
 
+#' @importFrom stats runif
 #' @importFrom stringr str_match str_split str_sub
 #' @importFrom graphics plot
 #' @importFrom magrittr mod "%>%"
@@ -1636,6 +1637,132 @@ im_conv = function( im, kernel, pad.method = "mirror" ){
 }
 
 
+#' Get V1 filter parameters
+#' @return a data frame
+#' @export
+V1_params = function(){
+  df = data.frame(
+    band = rep( 1:8, each = 2 ),
+    scale = rep( 1:2, times = 8 ),
+    ksize = seq( from = 7, by = 2, to = 37 ),
+    sigma = c( 2.8,3.6,4.5,5.4,6.3,7.3,8.2,9.2,10.2,11.3,12.3,13.4,14.6,15.8,17.0,18.2 ),
+    lambd = c( 3.5,4.6,5.6,6.8,7.9,9.1,10.3,11.5,12.7,14.1,15.4,16.8,18.2,19.7,21.2,22.8 ),
+    gamma = 0.3
+  )
+  return( df )
+}
+
+
+#' Create a Gabor filter bank
+#' @param id a vector of integer. which cell to use.
+#' @param n_orientation number of orientation
+#' @param cell_type either "simple" or "complex" (default) cell
+#' @return a list of filter kernels
+#' @export
+v1_kernels = function( id, n_orientation = 4, cell_type = "complex" ){
+  filters = list()
+  pars = V1_params()
+  pars = pars[ id, ]
+  for( i in 1:nrow( pars ) ){
+    p = pars[ i, ]
+    n_ori = ifelse( n_orientation == 0, 1, n_orientation )
+    for( t in 1:n_ori ){
+      name = paste0( "i", length( filters ) + 1, "_g", i, "_ori", t )
+      lambd_ = ifelse( n_orientation == 0, 1, p$lambd )
+      gamma_ = ifelse( n_orientation == 0, 1, p$gamma )
+      theta_ = ifelse( n_orientation == 0, 0, ( t - 1 ) * pi / n_ori )
+      f = gabor_kernel( ksize = p$ksize, sigma = p$sigma, lambd = lambd_,
+                            gamma = gamma_, theta = theta_ )
+      filters = c( filters, list( name = f ) )
+      names( filters )[ length( filters ) ] = name
+      if( cell_type == "complex" ){
+        name = paste0( "i", length( filters ) + 1, "_g", i, "_ori", t, "_sine" )
+        f = gabor_kernel( ksize = p$ksize, sigma = p$sigma, lambd = lambd_, psi = pi / 4,
+                              gamma = gamma_, theta = theta_ )
+        filters = c( filters, list( name = f ) )
+        names( filters )[ length( filters ) ] = name
+      }
+    }
+  }
+  return( filters )
+}
+
+
+#' Apply V1 filters to an image
+#' @param im an image
+#' @param id a vector of integer. which cell to use.
+#' @param n_orientation number of orientation
+#' @param cell_type either "simple" or "complex" (default) cell
+#' @return a list of images
+#' @examples
+#' im = filter_v1(im_gray(regatta), 1:2)
+#' pplot(im[[1]], rescale = TRUE)
+#' @export
+filter_v1 = function( im, id, n_orientation = 4, cell_type = "complex" ){
+  output = list()
+  filt = v1_kernels( id, n_orientation, cell_type )
+
+  if( cell_type == "simple" ){
+    for( i in 1:length( filt ) ){
+      output = c( output, list( im_conv( im, filt[[ i ]] ) ) )
+    }
+  } else if( cell_type == "complex" ){
+    for( i in seq( 1, length( filt ), by = 2 ) ){
+      im1 = im_conv( im, filt[[ i + 0 ]] )
+      im2 = im_conv( im, filt[[ i + 1 ]] )
+      output = c( output, list( sqrt( im1^2 + im2^2 ) ) )
+    }
+  }
+
+  return( output)
+}
+
+
+# v1_examples = function(){
+#   # low frequency tends to have larger spectrum power (fourier energy)
+#   # simply taking the difference in energy results in larger influence of low frequency
+#   # to control for this, we calculate commonality for each frequency-orientation energy
+#   # commonality = abs( h1 - h2 ) / max( h1, h2 )
+#   # commonality ranges between 0 and 1
+#
+#   im = regatta %>% im_gray %>% im_resize_scale( 0.5 )
+#   cell_type = "complex"
+#   imv1 = filter_v1( im, 1:4, 4, cell_type )
+#   F0 = sapply( imv1, mean ) / sapply( imv1, sd )
+#   plot( 1:length( imv1 ), sapply( imv1, mean ) )
+#   plot( 1:length( imv1 ), sapply( lapply( imv1, pow, p = 2 ), mean ) )
+#
+#
+#   imv1_1 = filter_v1( im1, 4, cell_type )
+#   F1 = sapply( imv1_1, mean ) / sapply( imv1_1, sd )
+#
+#   imv1_2 = filter_v1( im2, 4, cell_type )
+#   F2 = sapply( imv1_2, mean ) / sapply( imv1_2, sd )
+#
+#   imv1_3 = filter_v1( im3, 4, cell_type )
+#   F3 = sapply( imv1_3, mean ) / sapply( imv1_3, sd )
+#
+#   plot( 1:32, F3 )
+#   plot( F1, F2 )
+#   im_diff( F1, F2 )
+#
+#   # corrplot::corrplot( cor( imv1s ), method = "circle" )
+#
+#   imv1s = sapply( imv1, as.vector )
+#   col = colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+#   corrplot::corrplot(
+#     cor( imv1s ), method = "color", col = col(200), type = "full", order = "original",
+#     number.cex = .7, diag = T,
+#     addCoef.col = "black", # Add coefficient of correlation
+#     tl.col = "black", tl.srt = 90 # Text label color and rotation
+#   )
+#
+#   # getLocalEnergy( boats, c( 9, 9 ), lambd = 3.6, sigma = 3.6 ) %>% pplot
+#
+#   # getLocalEnergy( boats2, c( 31, 31 ), lambd = 18.2, sigma = 14.6 ) %>% pplot
+# }
+
+
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Photoshop ----
 
@@ -2252,4 +2379,296 @@ sRGB2YUV = function( im, use.B601 = FALSE ){
 YUV2sRGB = function( im,  use.B601 = FALSE ){
   im %>% YUV2RGB( use.B601 ) %>% RGB2sRGB
 }
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# material editing ----
+
+
+#' Scale-space decomposition by the guided filter
+#' @param im an image
+#' @param log_epsilon offset for log transformation
+#' @param filter_epsilon epsilon parameter
+#' @return an image
+#' @examples
+#' \donttest{
+#' im = gf_decompose(regatta)
+#' }
+#' @export
+gf_decompose = function( im, log_epsilon = 0.0001, filter_epsilon = 0.01 ){
+  if( im_nc( im ) == 2 || im_nc( im ) > 3 ){
+    warning( "The number of color channel must be either 1 or 3.")
+    return( NULL )
+  }
+  if( im_nc( im ) == 3 ){
+    lab = sRGB2Lab( im )
+    dec = gf_decompose( get_channel( lab, 1 ) / 100 )
+    dec = c( dec, list( a = get_channel( lab, 2 ), b = get_channel( lab, 3 ) ) )
+    dec$n.color = 3
+    return( dec )
+  }
+
+  L = log( im + log_epsilon )
+
+  # L0 = L
+  # Lk = guided_filter( Lk-1, filter_epsilon, 2^k ) (k=1~n)
+  # Dk = Lk-1 - Lk
+  # recon = ∑(Dk)[k=1~n] + Ln
+  N = floor( log2( min( im_size( L ) ) ) )
+  L_k_minus_1 = guided_filter( L, 2^1, filter_epsilon ) # L1
+  D_k = L - L_k_minus_1 # D1
+  D = list( D_k )
+  for( k in 2:N ){
+    L_k = guided_filter( L_k_minus_1, 2^k, filter_epsilon )
+    D_k = L_k_minus_1 - L_k
+    D = c( D, list( D_k ) )
+    if( k == N ){
+      Low_residual = list( residual = L_k )
+      names( D ) = paste0( "D", sprintf( paste0( "%0", nchar( N ), "d" ), 1:N ) )
+    } else {
+      L_k_minus_1 = L_k
+    }
+  }
+
+  D = lapply( D, function( im ){
+    blur_range = 0.2
+    range_lo = 1 - blur_range
+    range_hi = 1 + blur_range
+    sigma = stats::sd( im )
+    hi =
+      im * cubic_spline( im, range_lo * sigma, range_hi * sigma ) +
+      im * cubic_spline( im, -range_lo * sigma, -range_hi * sigma )
+    lo =
+      im * pmin( cubic_spline( im, -range_hi * sigma, -range_lo * sigma ),
+                 cubic_spline( im, range_hi * sigma, range_lo * sigma ) )
+    hip = hi
+    hip[ hi < 0 ] = 0
+    hin = hi
+    hin[ hi > 0 ] = 0
+    lop = lo
+    lop[ lo < 0 ] = 0
+    lon = lo
+    lon[ lo > 0 ] = 0
+    return( list( highamp_posi = hip, highamp_nega = hin, lowamp_posi = lop, lowamp_nega = lon ) )
+  } )
+
+  dec = list(
+    size = im_size( im ),
+    depth = N,
+    n.color = 1,
+    log_epsilon = log_epsilon,
+    filter_epsilon = filter_epsilon,
+    L = c( D, Low_residual )
+    )
+  # dec = c( D, Low_residual )
+  return( dec )
+}
+
+
+#' Reconstruct the original image from decomposed data
+#' @param dec decomposed data
+#' @return an image
+#' @examples
+#' \donttest{
+#' im1 = regatta
+#' dec = gf_decompose(im1)
+#' im2 = gf_reconstruct(dec)
+#' im_diff(im1, im2) # small difference means successful reconstruction
+#' }
+#' @export
+gf_reconstruct = function( dec ){
+  recon = array( 0, c( dec$size, 1 ) )
+  for( i in 1:dec$depth ){
+    for( j in 1:4 ){
+      recon = recon + dec$L[[ i ]][[ j ]]
+    }
+  }
+  recon = recon + dec$L$residual
+  recon = exp( recon ) - dec$log_epsilon
+
+  if( dec$n.color == 3 ){
+    recon = Lab2sRGB( merge_color( list( recon * 100, dec$a, dec$b ) ) )
+  }
+
+  return( recon )
+}
+
+
+# face = im_load(
+#   paste0( "/Users/tsuhir/Dropbox/code/material/imageDB/Chicago Face Database/",
+#           "CFD Version 2.0.3/img/CFD-AF-237-223-N.jpg" ) ) %>%
+#   im_crop( c( 0, 422, 118, 422 ) ) %>% im_resize_limit( 512 )
+
+#' Band-sift material editing
+#' @param im an image
+#' @param effect either "oily", "matte", "glossy", "shadow", "shadow2", "aging", "aging2", "smooth", or "smooth2"
+#' @param strength a scaling factor
+#' @param params a list. freq, amp, sign, strength
+#' @param log_epsilon offset for log transformation
+#' @param filter_epsilon epsilon parameter
+#' @return an image
+#' @examples
+#' \donttest{
+#' im = bandsift(regatta, "oily")
+#' pplot(im)
+#' im = bandsift(regatta, params = list(freq = "H", amp = "H", sign = "+", strength = 2))
+#' }
+#' @export
+bandsift = function( im, effect, strength, params, log_epsilon = 0.0001, filter_epsilon = 0.01 ){
+  if( im_nc( im ) == 3 ){
+    lab = sRGB2Lab( im )
+    bs = bandsift( get_channel( lab, 1 ) / 100, effect, strength, params, log_epsilon, filter_epsilon )
+    return( clamping( Lab2sRGB( merge_color( list( bs * 100, get_G( lab ), get_B( lab ) ) ) ) ) )
+  } else {
+    dec = gf_decompose( get_L( im ), log_epsilon, filter_epsilon )
+  }
+
+  if( missing( strength ) ){
+    if( ! missing( params ) ){
+      strength = params$strength
+    } else if( effect %in% c( "matte", "smooth", "smooth2" ) ){
+      strength = 0.25
+    } else if( effect %in% c( "oily" ) ){
+      strength = 2
+    } else if( effect %in% c( "shadow", "aging", "aging2", "glossy" ) ){
+      strength = 2.5
+    } else if( effect %in% c( "shadow2" ) ){
+      strength = 8
+    }
+  }
+
+  if( ! missing( effect ) ){
+    params = list()
+    # freq
+    if( effect %in% c( "oily", "matte", "shadow", "aging", "smooth", "aging2", "smooth2" ) ){
+      params$freq = "H"
+    } else if( effect %in% c( "glossy", "shadow2" ) ){
+      params$freq = "L"
+    }
+    # amp
+    if( effect %in% c( "oily", "matte", "shadow", "smooth", "smooth2" ) ){
+      params$amp = "H"
+    } else if( effect %in% c( "aging", "aging2" ) ){
+      params$amp = "L"
+    } else if( effect %in% c( "glossy", "shadow2" ) ){
+      params$amp = "A"
+    }
+    # sign
+    if( effect %in% c( "oily", "matte" ) ){
+      params$sign = "+"
+    } else if( effect %in% c( "shadow", "shadow2", "smooth", "smooth2" ) ){
+      params$sign = "-"
+    } else if( effect %in% c( "aging", "aging2", "glossy" ) ){
+      params$sign = "A"
+    }
+  }
+
+  if( is.character( params$freq ) ){
+    if( params$freq == "A" ){
+      freq = 1:dec$depth
+    } else if( params$freq == "H" ){
+      freq = 1:floor( dec$depth / 2 )
+    } else if( params$freq == "L" ){
+      freq = ( floor( dec$depth / 2 ) + 1 ):dec$depth
+    }
+  }
+  if( params$amp == "A" ){
+    amp = c( 1, 1, 1, 1 )
+  } else if( params$amp == "H" ){
+    amp = c( 1, 1, 0, 0 )
+  } else {
+    amp = c( 0, 0, 1, 1 )
+  }
+  if( params$sign == "A" ){
+    sign = c( 1, 1, 1, 1 )
+  } else if( params$sign == "+" ){
+    sign = c( 1, 0, 1, 0 )
+  } else {
+    sign = c( 0, 1, 0, 1 )
+  }
+  ind = which( amp & sign )
+
+  for( f in freq ){
+    for( i in ind ){
+      dec$L[[ f ]][[ i ]] = dec$L[[ f ]][[ i ]] * strength
+      # dec[[ f ]][[ i ]] = pmax(
+      #   box_blur( dec[[ f ]][[ i ]] * strength, 1 ), dec[[ f ]][[ i ]] * strength * 0.6 )
+      # dec[[ f ]][[ index ]] = im_conv( dec[[ f ]][[ index ]] * strength * 1, get_gauss_filter( 1 ) )
+    }
+  }
+
+  rec = clamping( gf_reconstruct( dec ) )
+  return( rec )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# CFS ----
+
+
+#' Create a 'dead-leaves' image
+#' @param height image height
+#' @param width image width
+#' @param shape the shape of leaves. either "square" (default) or "disk"
+#' @param grayscale either FALSE (default, color output) or TRUE (grayscale output)
+#' @param sigma_n numeric
+#' @param rmin minimum diameter of each leaf
+#' @param rmax maximum diameter of each leaf
+#' @return an image
+#' @examples
+#' pplot(create_dead_leaves(128))
+#' @export
+create_dead_leaves = function( height, width = height, shape = "square", grayscale = FALSE,
+                               sigma_n = 2, rmin = 0.02, rmax = 0.5 ){
+  k = 100
+  r_list = seq( from = rmin * max( width, height ), to = rmax * max( width, height ), length.out = k )
+  r_dist = 1 / r_list^sigma_n
+  if( sigma_n > 0 ){
+    r_dist = r_dist - 1 / ( rmax * max( width, height ) )^sigma_n
+  }
+  r_dist = rescaling01( cumsum( r_dist ) )
+
+  n_iter = 3000
+  M = array( -1, dim = c( height, width, ifelse( grayscale, 1, 3 ) ) )
+  m = width * height
+  for( i in 1:n_iter ){
+    col = c( runif( 1 ), runif( 1 ), runif( 1 ) )[ 1:dim( M )[ 3 ] ]
+    r = r_list[ which.min( abs( runif( 1 ) - r_dist ) ) ]
+    cx = runif( 1, 1, width )
+    cy = runif( 1, 1, height )
+    u = matrix( 1:width - cx, ncol = width, nrow = height, byrow = T )
+    v = matrix( 1:height - cy, ncol = width, nrow = height, byrow = F )
+
+    if( shape == "disk" ){
+      D = u^2 + v^2
+      I = M[,,1] == -1 & D < r^2
+    } else if( shape == "square" ){
+      I = M[,,1] == -1 & abs( u ) < r & abs( v ) < r
+    }
+
+    M[ I ] = rep( col, each = sum( I ) )
+
+    m = m - sum( I )
+    if( m <= 0 ){
+      # print( paste0( "break: ", m ) )
+      break
+    }
+  }
+
+  M[ M == -1 ] = 0
+
+  return( nimg( M ) )
+}
+
+
+#' #' Create and save dead-leaves images
+#' create_CFS_masks = function(){
+#'   height = 128
+#'   n_img = 2
+#'   for( i in 1:n_img ){
+#'     im = create_dead_leaves( height )
+#'     im_save( im, sprintf( paste0( "%0", nchar( n_img ), "d" ), i ), "CFS2" )
+#'   }
+#' }
+
 
