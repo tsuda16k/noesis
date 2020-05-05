@@ -214,6 +214,19 @@ im_load_dir = function( path ){
 }
 
 
+get_image_name_from_file = function( file ){
+  tryCatch({
+    name = stringr::str_split( file, "/" )[[ 1 ]]
+    name = name[ length( name ) ]
+    name = stringr::str_split( name, "[.]" )[[ 1 ]]
+    return( name[ 1 ] )
+  },
+  error = function(e) {
+    return( "-" )
+  })
+}
+
+
 #' Save an image to disk
 #' @param im An image.
 #' @param name Name of the image file.
@@ -310,6 +323,561 @@ nimg2cimg = function( im ){
       return( imager::as.cimg( im2 ) )
     }
   }
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# data structure ----
+
+
+matrix2list = function( x ){
+  lapply(seq_len(ncol(x)), function(i) x[,i])
+}
+
+
+list2matrix = function( x ){
+  matrix(unlist(x, use.names = FALSE), ncol = length( x ), byrow = FALSE)
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# color space ----
+
+
+#' sRGB to linear RGB conversion
+#' @param im an image
+#' @return an image
+#' @export
+sRGB2RGB = function( im ){
+  mask = im < 0.04045
+  im[ mask ] = im[ mask ] / 12.92
+  im[ !mask ] = ( ( im[ !mask ] + 0.055 ) / 1.055 )^2.4
+  return( im )
+}
+
+
+#' linear RGB to sRGB conversion
+#' @param im an image
+#' @return an image
+#' @export
+RGB2sRGB = function( im ){
+  mask = im < 0.0031308
+  im[ mask ] = im[ mask ] * 12.92
+  im[ !mask ] = 1.055 * im[ !mask ]^( 1 / 2.4 ) - 0.055
+  return( im )
+}
+
+
+#' sRGB to HSL conversion
+#' @param im an image
+#' @return an image
+#' @export
+sRGB2HSL = function( im ){
+  cimg = nimg2cimg( im_tricolored( im ) )
+  M = pmax( imager::R( cimg ), imager::G( cimg ), imager::B( cimg ) )
+  m = pmin( imager::R( cimg ), imager::G( cimg ), imager::B( cimg ) )
+  C = M - m
+  # calculate H
+  hue = imager::cimg( array( 0, c( dim( cimg )[ 1:3 ], 1 ) ) )
+  H1 = ( imager::G( cimg ) - imager::B( cimg ) ) / C
+  H1[ , , 1, 1 ] = H1[ , , 1, 1 ] + ifelse( H1[ , , 1, 1 ] < 0, 6, 0 )
+  H2 = ( imager::B( cimg ) - imager::R( cimg ) ) / C + 2
+  H3 = ( imager::R( cimg ) - imager::G( cimg ) ) / C + 4
+  hue[ M == imager::R( cimg ) ] = H1[ M == imager::R( cimg ) ]
+  hue[ M == imager::G( cimg ) ] = H2[ M == imager::G( cimg ) ]
+  hue[ M == imager::B( cimg ) ] = H3[ M == imager::B( cimg ) ]
+  hue[ ( imager::R( cimg ) == imager::G( cimg ) ) & ( imager::R( cimg ) == imager::B( cimg ) ) ] = 0
+  hue = hue * 60
+  hue = hue %% 360
+  # calculate L and S
+  L = ( M + m ) / 2
+  S = imager::cimg( array( 0, c( dim( cimg )[ 1:3 ], 1 ) ) )
+  S = ( M - m ) / ( 1 - abs( M + m - 1 ) )
+  cimg = imager::imappend( list( hue, S, L ), axis = "c" )
+  return( cimg2nimg( cimg ) )
+}
+
+
+#' RGB to XYZ conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+RGB2XYZ = function( im, use.D65 = TRUE ){
+  if( use.D65 ){
+    X = 0.4124564 * get_R( im ) + 0.3575761 * get_G( im ) + 0.1804375 * get_B( im )
+    Y = 0.2126729 * get_R( im ) + 0.7151522 * get_G( im ) + 0.0721750 * get_B( im )
+    Z = 0.0193339 * get_R( im ) + 0.1191920 * get_G( im ) + 0.9503041 * get_B( im )
+  } else {
+    X = 0.4360747 * get_R( im ) + 0.3850649 * get_G( im ) + 0.1430804 * get_B( im )
+    Y = 0.2225045 * get_R( im ) + 0.7168786 * get_G( im ) + 0.0606169 * get_B( im )
+    Z = 0.0139322 * get_R( im ) + 0.0971045 * get_G( im ) + 0.7141733 * get_B( im )
+  }
+  return( merge_color( list( X, Y, Z ) ) )
+}
+
+
+#' XYZ to RGB conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+XYZ2RGB = function( im, use.D65 = TRUE ){
+  if( use.D65 ){
+    R =  3.24045484 * get_R( im ) - 1.5371389 * get_G( im ) - 0.49853155 * get_B( im )
+    G = -0.96926639 * get_R( im ) + 1.8760109 * get_G( im ) + 0.04155608 * get_B( im )
+    B =  0.05564342 * get_R( im ) - 0.2040259 * get_G( im ) + 1.05722516 * get_B( im )
+  } else {
+    R =  3.13385637 * get_R( im ) - 1.6168668 * get_G( im ) - 0.49061477 * get_B( im )
+    G = -0.97876856 * get_R( im ) + 1.9161416 * get_G( im ) + 0.03345412 * get_B( im )
+    B =  0.07194517 * get_R( im ) - 0.2289913 * get_G( im ) + 1.40524267 * get_B( im )
+  }
+  return( merge_color( list( R, G, B ) ) )
+}
+
+
+#' sRGB to XYZ conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+sRGB2XYZ = function( im, use.D65 = TRUE ){
+  im %>% sRGB2RGB %>% RGB2XYZ( use.D65 )
+}
+
+
+#' XYZ to sRGB conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+XYZ2sRGB = function( im, use.D65 = TRUE ){
+  im %>% XYZ2RGB( use.D65 ) %>% RGB2sRGB
+}
+
+
+#' XYZ to Lab conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+XYZ2Lab = function( im, use.D65 = TRUE ){
+  # reference white
+  if( use.D65 ){
+    white = c( 0.95047, 1, 1.08883 )
+  } else {
+    white = c( 0.96420, 1, 0.82491 )
+  }
+  im[ ,,1 ] = im[ ,,1, drop = FALSE ] / white[ 1 ]
+  im[ ,,3 ] = im[ ,,3, drop = FALSE ] / white[ 3 ]
+  #
+  mask = 24389 * im > 216
+  im[ mask ] = im[ mask ]^( 1 / 3 )
+  im[ !mask ] = ( 24389 * im[ !mask ] / 27 + 16 ) / 116
+  fx = im[ ,,1, drop = FALSE ]
+  fy = im[ ,,2, drop = FALSE ]
+  fz = im[ ,,3, drop = FALSE ]
+  #
+  L = ( 116 * fy - 16 )
+  a = 500 * ( fx - fy )
+  b = 200 * ( fy - fz )
+  return( merge_color( list( L, a, b ) ) )
+}
+
+
+#' Lab to XYZ conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+Lab2XYZ = function( im, use.D65 = TRUE ){
+  eta = 216 / 24389
+  kappa = 24389 / 27
+  #
+  fy = ( im[,,1, drop = FALSE ] + 16 ) / 116
+  fx = 0.002 * im[,,2, drop = FALSE ] + fy
+  fz = fy - 0.005 * im[,,3, drop = FALSE ]
+  # x = fx^3 > eta ? fx^3 : ( 116 * fx - 16 ) / kappa
+  mask = fx^3 > eta
+  fx[ mask ] = fx[ mask ]^3
+  fx[ !mask ] = ( 116 * fx[ !mask ] - 16 ) / kappa
+  # y = L > 8 ? ( ( L + 16 ) / 116 )^3 : L / kappa
+  L = im[,,1, drop = FALSE ]
+  mask = L > 8
+  L[ mask ] = ( ( L[ mask ] + 16 ) / 116 )^3
+  L[ !mask ] = L[ !mask ] / kappa
+  # z = fz^3 > eta ? fz^3 : ( 116 * fz - 16 ) / kappa
+  mask = fz^3 > eta
+  fz[ mask ] = fz[ mask ]^3
+  fz[ !mask ] = ( 116 * fz[ !mask ] - 16 ) / kappa
+  # reference white
+  if( use.D65 ){
+    white = c( 0.95047, 1, 1.08883 )
+  } else {
+    white = c( 0.96420, 1, 0.82491 )
+  }
+  fx = fx * white[ 1 ]
+  fz = fz * white[ 3 ]
+  return( merge_color( list( fx, L, fz ) ) )
+}
+
+
+#' sRGB to Lab conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+sRGB2Lab = function( im, use.D65 = TRUE ){
+  XYZ2Lab( sRGB2XYZ( im, use.D65 ), use.D65 )
+}
+
+
+#' Lab to sRGB conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+Lab2sRGB = function( im, use.D65 = TRUE ){
+  XYZ2sRGB( Lab2XYZ( im, use.D65 ), use.D65 )
+}
+
+
+#' RGB to Lab conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+RGB2Lab = function( im, use.D65 = TRUE ){
+  im %>% RGB2XYZ( use.D65 ) %>% XYZ2Lab( use.D65 )
+}
+
+
+#' Lab to RGB conversion
+#' @param im an image
+#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
+#' @return an image
+#' @export
+Lab2RGB = function( im, use.D65 = TRUE ){
+  im %>% Lab2XYZ( use.D65 ) %>% XYZ2RGB( use.D65 )
+}
+
+
+#' RGB to YUV conversion
+#' @param im an image
+#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
+#' @return an image
+#' @source \url{ https://en.wikipedia.org/wiki/YUV }
+#' @export
+RGB2YUV = function( im, use.B601 = FALSE ){
+  if( use.B601 ){
+    Y =   0.299   * get_R( im ) + 0.587   * get_G( im ) + 0.114   * get_B( im )
+    U = - 0.14713 * get_R( im ) - 0.28886 * get_G( im ) + 0.436   * get_B( im )
+    V =   0.615   * get_R( im ) - 0.51499 * get_G( im ) - 0.10001 * get_B( im )
+  } else {
+    Y =   0.2126  * get_R( im ) + 0.7152  * get_G( im ) + 0.0722  * get_B( im )
+    U = - 0.09991 * get_R( im ) - 0.33609 * get_G( im ) + 0.436   * get_B( im )
+    V =   0.615   * get_R( im ) - 0.55861 * get_G( im ) - 0.05639 * get_B( im )
+  }
+  return( merge_color( list( Y, U, V ) ) )
+}
+
+
+#' YUV to RGB conversion
+#' @param im an image
+#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
+#' @return an image
+#' @source \url{ https://en.wikipedia.org/wiki/YUV }
+#' @export
+YUV2RGB = function( im, use.B601 = FALSE ){
+  if( use.B601 ){
+    R = 1 * get_R( im ) + 0       * get_G( im ) + 1.13983 * get_B( im )
+    G = 1 * get_R( im ) - 0.39465 * get_G( im ) - 0.58060 * get_B( im )
+    B = 1 * get_R( im ) + 2.03211 * get_G( im ) + 0       * get_B( im )
+  } else {
+    R = 1 * get_R( im ) + 0       * get_G( im ) + 1.28033 * get_B( im )
+    G = 1 * get_R( im ) - 0.21482 * get_G( im ) - 0.38059 * get_B( im )
+    B = 1 * get_R( im ) + 2.12798 * get_G( im ) + 0       * get_B( im )
+  }
+  return( merge_color( list( R, G, B ) ) )
+}
+
+
+#' sRGB to YUV conversion
+#' @param im an image
+#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
+#' @return an image
+#' @source \url{ https://en.wikipedia.org/wiki/YUV }
+#' @export
+sRGB2YUV = function( im, use.B601 = FALSE ){
+  im %>% sRGB2RGB %>% RGB2YUV( use.B601 )
+}
+
+
+#' YUV to sRGB conversion
+#' @param im an image
+#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
+#' @return an image
+#' @source \url{ https://en.wikipedia.org/wiki/YUV }
+#' @export
+YUV2sRGB = function( im,  use.B601 = FALSE ){
+  im %>% YUV2RGB( use.B601 ) %>% RGB2sRGB
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# math ----
+
+
+#' Rescale numeric vector to have a range between 0 to 1
+#' @param x a numeric vector
+#' @return a rescaled numeric vector
+#' @seealso \code{\link{rescaling}}
+#' @examples
+#' rescaling01( 1:5 )
+#' @export
+rescaling01 = function( x ){
+  if( max( x ) == min( x ) ){
+    return( x )
+  } else {
+    return( ( x - min( x ) ) / ( max( x ) - min( x ) ) )
+  }
+}
+
+
+#' Rescale numeric vector to have a specified range
+#' @param x a numeric vector
+#' @param from lowest value
+#' @param to highest value
+#' @return a rescaled numeric vector
+#' @seealso \code{\link{rescaling01}}
+#' @examples
+#' rescaling( 1:5, from = 0, to = 10 )
+#' @export
+rescaling = function( x, from = 0, to = 1 ){
+  if( max( x ) == min( x ) ){
+    return( x )
+  } else {
+    return( from + ( to - from ) * rescaling01( x ) )
+  }
+}
+
+
+#' Clamp values to a minimum and maximum value
+#' @param x a numeric vector
+#' @param min minimum value
+#' @param max maximum value
+#' @return a numeric vector
+#' @examples
+#' clamping( -5:5, min = -3, max = 3 )
+#' @export
+clamping = function( x, min = 0, max = 1 ){
+  x[ x < min ] = min
+  x[ x > max ] = max
+  return( x )
+}
+
+
+#' Calculate a cubic spline
+#' @param x a numeric vector
+#' @param low minimum value of output
+#' @param high maximum value of output
+#' @return a numeric vector
+#' @examples
+#' x = seq( from = 0, to = 1, by = 0.01 )
+#' plot( x, cubic_spline( x ) )
+#' @export
+cubic_spline = function( x, low = 0, high = 1 ){
+  if( low == high ){
+    warning( "low and high must be different!" )
+  } else if( low > high ){
+    return( 1 - ( cubic_spline( x, high, low ) ) )
+  }
+  x2 = x
+  t = x[ x > low & x < high ]
+  t = ( t - low ) / ( high - low )
+  x2[ x > low & x < high ] = t^2 * ( 3 - 2 * t )
+  x2[ x <= low ] = 0
+  x2[ x >= high ] = 1
+  return( x2 )
+}
+
+
+#' Calculate the Euclidean distance between two points
+#' @param x1 x coordinate of point 1
+#' @param y1 y coordinate of point 1
+#' @param x2 x coordinate of point 2
+#' @param y2 y coordinate of point 2
+#' @return distance between point 1 and 2
+#' @export
+eucdist = function( x1, y1, x2, y2 ){
+  return( sqrt( ( x1 - x2 )^2 + ( y1 - y2 )^2 ) )
+}
+
+
+#' Shift operation
+#' @param v a numeric vector
+#' @param lag a numeric
+#' @return a lagged vector
+#' @export
+vec_shift = function( v, lag = 0 ){
+  if( lag == 0 || abs( lag ) == length( v ) ){
+    return( v )
+  }
+  index = 1:length( v )
+  lag = lag %% length( index )
+  index = c( index[ length( index ) - lag + 1 ]:max( index ), 1:index[ length( index ) - lag ] )
+  return( index )
+}
+
+
+#' Power operation
+#' @param x a numeric vector
+#' @param p power term
+#' @return a numeric vector
+#' @export
+pow = function( x, p ){
+  return( x^p )
+}
+
+
+#' Calculate range
+#' @param x a numeric vector
+#' @return the range of x
+#' @export
+MinMax = MaxMin = function( x ){
+  return( max( x ) - min( x ) )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# stats ----
+
+
+#' L2 distance of pixel value
+#' @param im1 an image
+#' @param im2 an image
+#' @return mean squared error
+#' @examples
+#' im_diff(regatta, regatta^2)
+#' @export
+im_diff = function( im1, im2 ){
+  if( imager::is.cimg( im1 ) ){
+    im1 = cimg2nimg( im1 )
+  }
+  if( imager::is.cimg( im2 ) ){
+    im2 = cimg2nimg( im2 )
+  }
+  return( mean( ( im1 - im2 )^2 ) )
+}
+
+
+#' Get moment statistics of a vector/array
+#' @param x data
+#' @param order order of the moment to be computed
+#' @return a numeric vector
+#' @examples
+#' get_moments( rnorm( 20 ) ) # get the 1st to 4th order moments
+#' get_moments( rnorm( 20 ), order = 3 ) # get only the 3rd order moment (skewness)
+#' get_moments( rnorm( 20 ), order = c( 3, 1 ) ) # get skewness and mean
+#' @export
+get_moments = function( x, order = 1:4 ){
+  m = rep( 0.0, times = length( order ) )
+  names( m ) = c( "mean", "sd", "skewness", "kurtosis" )[ order ]
+  for( i in 1:length( order ) ){
+    if( order[ i ] == 1 ){
+      m[ i ] = base::mean( x )
+    } else if( order[ i ] == 2 ){
+      m[ i ] = stats::sd( x )
+    } else if( order[ i ] == 3 ){
+      m[ i ] = moments::skewness( x )
+    } else if( order[ i ] == 4 ){
+      m[ i ] = moments::kurtosis( x )
+    }
+  }
+  return( m )
+}
+
+
+#' Get moment statistics of an image
+#' @param im an image
+#' @param channel color channel
+#' @param order order of the moment to be computed
+#' @param space color space, either "CIELAB" (default) or "RGB
+#' @param max_size resize input image before calculation of moments
+#' @return a data frame of moment values
+#' @examples
+#' im_moments(regatta) # moments in CIELAB color space
+#' im_moments(regatta, space = "RGB") # moments of RGB channels
+#' im_moments(regatta, channel = 1) # L channel of CIELAB color space
+#' im_moments(regatta, channel = "L") # same as above
+#' im_moments(regatta, channel = 1, space = "RGB") # R channel of the input image
+#' im_moments(regatta, channel = 2:3, order = c(2, 3)) # sd and skew in a and b channels
+#' im_moments(regatta, channel = c("a", "b"), order = c(2, 3)) # same as above
+#' @export
+im_moments = function( im, channel = 1:3, order = 1:4, space = "CIELAB", max_size = 1024 ){
+  if( im_nc( im ) == 1 ){
+    channel = 1
+  }
+  df = data.frame()
+  im = im_resize_limit( im, max_size )
+  if( space == "CIELAB" ){
+    if( im_nc( im ) > 2 ){
+      im = sRGB2Lab( im )
+    }
+    clabel = c( "L", "a", "b" )
+  } else {
+    clabel = c( "R", "G", "B", "A" )
+  }
+  channel = force_channel_label_to_num( channel )
+  for( i in 1:length( channel ) ){
+    mmt = get_moments( get_channel( im, channel[ i ] ), order )
+    df = rbind( df, data.frame(
+      channel = clabel[ channel[ i ] ], moment = names( mmt ), value = unname( mmt ) ) )
+  }
+  return( df )
+}
+
+
+#' Apply shift and rescale to the distribution of pixel values
+#' @param im an image
+#' @param channel color channel
+#' @param mean center of distribution. when not given, the mean of that channel is used.
+#' @param sd dispersion of distribution. when not given, the sd of that channel is used.
+#' @param space color space
+#' @param clamp either TRUE (default, output pixel value is clamped to range 0-1) or FALSE
+#' @return an image
+#' @examples
+#' im_moments(regatta) # before manipulation
+#' im_moments(im_distribute(regatta, "b", mean = 0, sd = 20)) # b channel is adjusted
+#' pplot(im_distribute(regatta, "b", mean = 0, sd = 20)) # see the effect
+#' pplot(im_distribute(regatta, c("a", "b"), c(-5, 0), c(15, 20))) # adjust two channels simultaneously
+#' @export
+im_distribute = function( im, channel, mean = NULL, sd = NULL, space = "CIELAB", clamp = TRUE ){
+  channel = force_channel_label_to_num( channel )
+  if( space == "CIELAB" && im_nc( im ) > 2 ){
+    im = sRGB2Lab( im )
+  }
+  for( i in 1:length( channel ) ){
+    if( is.null( mean[ i ] ) || is.na( mean[ i ] ) ){
+      M = base::mean( get_channel( im, channel[ i ] ) )
+    } else {
+      M = mean[ i ]
+    }
+    if( is.null( sd[ i ] ) || is.na( sd[ i ] ) ){
+      S = stats::sd( get_channel( im, channel[ i ] ) )
+    } else {
+      S = sd[ i ]
+    }
+    I = im[ , , channel[ i ], drop = F ]
+    im[ , , channel[ i ] ] = S * ( ( I - base::mean( I ) ) / stats::sd( I ) ) + M
+  }
+  if( space == "CIELAB" && im_nc( im ) > 2 ){
+    im = Lab2sRGB( im )
+  }
+  if( clamp ){
+    im = clamping( im )
+  }
+  return( im )
 }
 
 
@@ -903,6 +1471,393 @@ get_L = function( im, scale = TRUE ){
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# spatial filtering ----
+
+
+#' Box blur
+#' @param im an image
+#' @param radius radius
+#' @return an image
+#' @examples
+#' pplot(box_blur(regatta, 10))
+#' @export
+box_blur = function( im, radius ){
+  if( radius < 1 ){
+    warning( "radius should be equal to or larger than 1.")
+    return( im )
+  }
+  r = radius
+  if( im_nc( im ) != 1 ){
+    imlist = list()
+    for( i in 1:im_nc( im ) ){
+      imlist = c( imlist, list( box_blur( get_channel( im, i ), r ) ) )
+    }
+    return( merge_color( imlist ) )
+  }
+  L = 2 * r + 1
+  width = im_width( im )
+  height = im_height( im )
+  im = im_pad( im, r, method = "mirror" )
+  out = array( 0.0, dim( im ) )
+  cumsum = rowSums( im[ , 1:(2*r), ] )
+  # i = r + 1
+  cumsum = cumsum + im[ ,r + 1 + r, ]
+  out[ , r + 1, ] = cumsum / L
+  for( i in ( r + 2 ):( width + r ) ){
+    cumsum = cumsum + im[ ,i + r, ] - im[ ,i - r - 1, ]
+    out[ , i, ] = cumsum / L
+  }
+  im = out
+  cumsum = colSums( im[ 1:(2*r), , ] )
+  cumsum = cumsum + im[ r + 1 + r, , ]
+  out[ r + 1, , ] = cumsum / L
+  for( i in ( r + 2 ):( height + r ) ){
+    cumsum = cumsum + im[ i + r, , ] - im[ i - r - 1, , ]
+    out[ i, , ] = cumsum / L
+  }
+  out = im_crop( out, r )
+  return( out )
+}
+
+
+#' Box variance
+#' @param im an image
+#' @param radius radius
+#' @return an image
+#' @examples
+#' pplot(box_variance(regatta, 3), rescale = TRUE)
+#' @export
+box_variance = function( im, radius ){
+  box_blur( im^2, radius ) - box_blur( im, radius )^2
+}
+
+
+#' Create a Gaussian kernel
+#' @param sd sd of the normal distribution
+#' @param radius kernel radius. kernel diameter is 2 * radius + 1.
+#' @return an image
+#' @examples
+#' pplot(gauss_kernel(10), rescale = TRUE)
+#' pplot(gauss_kernel(sd = 10, radius = 20), rescale = TRUE)
+#' @export
+gauss_kernel = function( sd, radius = round( 2.5 * sd ) ){
+  if( sd < 0.2 ){
+    warning( "sd must be equal to or larger than 0.2")
+    return( NULL )
+  }
+  L = 2 * radius + 1
+  matx = matrix( stats::dnorm( 1:L, mean = radius + 1, sd = sd ), nrow = L, ncol = L, byrow = FALSE )
+  maty = matrix( stats::dnorm( 1:L, mean = radius + 1, sd = sd ), nrow = L, ncol = L, byrow = TRUE )
+  mat = matx * maty
+  mat = mat / sum( mat )
+  return( nimg( array( mat, c( L, L, 1 ) ) ) )
+}
+
+
+#' Create a gabor filter kernel
+#' @param ksize the size of the gabor kernel. should be odd number (if not, incremented by one).
+#' @param sigma the standard deviation of the Gaussian function
+#' @param lambd the wavelength of the sinusoidal factor
+#' @param theta the orientation of the normal to the parallel stripes of the Gabor function
+#' @param psi the phase offset
+#' @param gamma the spatial aspect ratio
+#' @param normalize if TRUE (default), kernel is normalized (the zero-summing normalization)
+#' @param mask if TRUE, circular mask is applied.
+#' @examples
+#' gb = gabor_kernel( ksize = 61 )
+#' pplot(gb, rescale = TRUE)
+#' gb = gabor_kernel( ksize = 61, theta = pi/6 )
+#' pplot(gb, rescale = TRUE)
+#' @export
+gabor_kernel = function( ksize = sigma * 6, sigma = min( ksize ) / 6, lambd = min( ksize ) / 4,
+                         theta = 0, psi = 0, gamma = 1, normalize = TRUE, mask = FALSE ){
+  if( ksize %% 2 == 0 ){
+    ksize = ksize + 1
+  }
+  if( length( ksize ) == 1 ){
+    ksize = c( ksize, ksize )
+  }
+  sigmaX = sigma
+  sigmaY = sigma / gamma
+  nstds = 3
+  c = cos( theta )
+  s = sin( theta )
+  xmax = ifelse( ksize[ 1 ] > 0, floor( ksize[ 1 ] / 2 ),
+                 round( max( abs( nstds * sigmaX * c ), abs( nstds * sigmaY * s ) ) ) )
+  ymax = ifelse( ksize[ 2 ] > 0, floor( ksize[ 2 ] / 2 ),
+                 round( max( abs( nstds * sigmaX * s ), abs( nstds * sigmaY * c ) ) ) )
+  xmin = -xmax
+  ymin = -ymax
+  scale = 1
+  ex = -0.5 / ( sigmaX * sigmaX )
+  ey = -0.5 / ( sigmaY * sigmaY )
+  cscale = pi * 2 / lambd
+
+  ix = matrix( xmin:xmax, nrow = ymax - ymin + 1, ncol = xmax - xmin + 1, byrow = TRUE )
+  iy = matrix( ymin:ymax, nrow = ymax - ymin + 1, ncol = xmax - xmin + 1 )
+  xr =  ix * c + iy * s
+  yr = -ix * s + iy * c
+
+  kernel = scale * exp( ex * xr * xr + ey * yr * yr ) * cos( cscale * xr - psi )
+
+  if( mask ){
+    size = max( ksize )
+    cx = cy = ceiling( size / 2 )
+    u = matrix( 1:size - cx, ncol = size, nrow = size, byrow = TRUE )
+    v = matrix( 1:size - cy, ncol = size, nrow = size, byrow = FALSE )
+    D = u^2 + v^2
+    kernel[ D > (size/2)^2 ] = 0
+  }
+
+  if ( normalize ){
+    psum = sum( kernel[ kernel > 0 ] )
+    kernel[ kernel > 0 ] = kernel[ kernel > 0 ] / psum
+    nsum = sum( kernel[ kernel < 0 ] )
+    kernel[ kernel < 0 ] = kernel[ kernel < 0 ] / abs( nsum )
+  }
+
+  return( nimg( kernel ) )
+}
+
+
+#' Apply the guided filter
+#' @param p an image
+#' @param radius filter radius
+#' @param epsilon epsilon parameter
+#' @param I guide image
+#' @return an image
+#' @examples
+#' pplot(guided_filter(regatta,8))
+#' @export
+guided_filter = function( p, radius, epsilon = 0.1, I = p ){
+  if( radius < 1 ){
+    warning( "radius should be equal to or larger than 1.")
+    return( p )
+  }
+
+  I_mean = box_blur( I, radius )
+  I_var = box_variance( I, radius )
+  p_mean = box_blur( p, radius )
+
+  a = ( box_blur( I * p, radius ) - I_mean * p_mean ) / ( I_var + epsilon )
+  b = p_mean - a * I_mean
+
+  a_mean = box_blur( a, radius )
+  b_mean = box_blur( b, radius )
+
+  q = a_mean * I + b_mean
+  return( q )
+}
+
+
+#' Apply statistical filter
+#' @param im an image
+#' @param radius kernel radius
+#' @param FUN e.g., min, max, median, mean, var
+#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
+#' @return an image
+#' @examples
+#' pplot(stat_filter(regatta, 1, min))
+#' @export
+stat_filter = function( im, radius, FUN, pad.method = "mirror" ){
+  if( radius < 1 ){
+    warning( "radius should be equal to or larger than 1.")
+    return( im )
+  }
+
+  if( im_nc( im ) > 1 ){
+    imlist = list()
+    for( i in 1:im_nc( im ) ){
+      imlist = c( imlist, list( stat_filter( get_channel( im, i ), radius, FUN, pad.method ) ) )
+    }
+    return( merge_color( imlist ) )
+  }
+
+  im = im_pad( im, radius, method = pad.method )[,,]
+  im2 = im
+  for( cy in ( 1 + radius ):( im_height( im ) - radius ) ){
+    for( cx in ( 1 + radius ):( im_width( im ) - radius ) ){
+      im2[ cy, cx ] = FUN(
+        as.vector( im[ ( cy - radius ):( cy + radius ), ( cx - radius ):( cx + radius ) ] )
+      )
+    }
+  }
+  im2 = im_crop( nimg( im2 ), radius )
+  return( im2 )
+
+  # im = im_pad( im, radius, method = pad.method )[,,]
+  # im2 = matrix2list( im )
+  # for( cy in ( 1 + radius ):( im_height( im ) - radius ) ){
+  #   for( cx in ( 1 + radius ):( im_width( im ) - radius ) ){
+  #     im2[[ cx ]][ cy ] = FUN(
+  #       as.vector( im[ ( cy - radius ):( cy + radius ), ( cx - radius ):( cx + radius ) ] )
+  #     )
+  #   }
+  # }
+  # im2 = list2matrix( im2 )
+  # im2 = im_crop( nimg( im2 ), radius )
+  # return( im2 )
+}
+
+
+#' Convolve an image
+#' @param im an image
+#' @param kernel filter image
+#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
+#' @return an image
+#' @examples
+#' pplot(im_conv(regatta, gauss_kernel(sd = 2)))
+#' @export
+im_conv = function( im, kernel, pad.method = "mirror" ){
+  if( is.null( kernel ) ){
+    return( im )
+  }
+  if( im_nc( im ) > 1 ){
+    imlist = list()
+    for( i in 1:im_nc( im ) ){
+      imlist = c( imlist, list( im_conv( get_channel( im, i ), kernel, pad.method ) ) )
+    }
+    return( merge_color( imlist ) )
+  }
+  npad = floor( max( dim( kernel )[ 1:2 ] ) / 2 )
+  im = im_pad( im, n = npad, method = pad.method )
+  im = imager::convolve( nimg2cimg( im ), nimg2cimg( kernel ) )
+  im = imager::crop.borders( im, nPix = npad )
+  return( cimg2nimg( im ) )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# V1 model ----
+
+
+#' Get V1 filter parameters
+#' @return a data frame
+#' @export
+V1_params = function(){
+  df = data.frame(
+    band = rep( 1:8, each = 2 ),
+    scale = rep( 1:2, times = 8 ),
+    ksize = seq( from = 7, by = 2, to = 37 ),
+    sigma = c( 2.8,3.6,4.5,5.4,6.3,7.3,8.2,9.2,10.2,11.3,12.3,13.4,14.6,15.8,17.0,18.2 ),
+    lambd = c( 3.5,4.6,5.6,6.8,7.9,9.1,10.3,11.5,12.7,14.1,15.4,16.8,18.2,19.7,21.2,22.8 ),
+    gamma = 0.3
+  )
+  return( df )
+}
+
+
+#' Create a Gabor filter bank
+#' @param id a vector of integer. which cell to use.
+#' @param n_orientation number of orientation
+#' @param cell_type either "simple" or "complex" (default) cell
+#' @return a list of filter kernels
+#' @export
+v1_kernels = function( id, n_orientation = 4, cell_type = "complex" ){
+  filters = list()
+  pars = V1_params()
+  pars = pars[ id, ]
+  for( i in 1:nrow( pars ) ){
+    p = pars[ i, ]
+    n_ori = ifelse( n_orientation == 0, 1, n_orientation )
+    for( t in 1:n_ori ){
+      name = paste0( "i", length( filters ) + 1, "_g", i, "_ori", t )
+      lambd_ = ifelse( n_orientation == 0, 1, p$lambd )
+      gamma_ = ifelse( n_orientation == 0, 1, p$gamma )
+      theta_ = ifelse( n_orientation == 0, 0, ( t - 1 ) * pi / n_ori )
+      f = gabor_kernel( ksize = p$ksize, sigma = p$sigma, lambd = lambd_,
+                        gamma = gamma_, theta = theta_ )
+      filters = c( filters, list( name = f ) )
+      names( filters )[ length( filters ) ] = name
+      if( cell_type == "complex" ){
+        name = paste0( "i", length( filters ) + 1, "_g", i, "_ori", t, "_sine" )
+        f = gabor_kernel( ksize = p$ksize, sigma = p$sigma, lambd = lambd_, psi = pi / 4,
+                          gamma = gamma_, theta = theta_ )
+        filters = c( filters, list( name = f ) )
+        names( filters )[ length( filters ) ] = name
+      }
+    }
+  }
+  return( filters )
+}
+
+
+#' Apply V1 filters to an image
+#' @param im an image
+#' @param id a vector of integer. which cell to use.
+#' @param n_orientation number of orientation
+#' @param cell_type either "simple" or "complex" (default) cell
+#' @return a list of images
+#' @examples
+#' im = filter_v1(im_gray(regatta), 1:2)
+#' pplot(im[[1]], rescale = TRUE)
+#' @export
+filter_v1 = function( im, id, n_orientation = 4, cell_type = "complex" ){
+  output = list()
+  filt = v1_kernels( id, n_orientation, cell_type )
+
+  if( cell_type == "simple" ){
+    for( i in 1:length( filt ) ){
+      output = c( output, list( im_conv( im, filt[[ i ]] ) ) )
+    }
+  } else if( cell_type == "complex" ){
+    for( i in seq( 1, length( filt ), by = 2 ) ){
+      im1 = im_conv( im, filt[[ i + 0 ]] )
+      im2 = im_conv( im, filt[[ i + 1 ]] )
+      output = c( output, list( sqrt( im1^2 + im2^2 ) ) )
+    }
+  }
+
+  return( output)
+}
+
+
+# v1_examples = function(){
+#   # low frequency tends to have larger spectrum power (fourier energy)
+#   # simply taking the difference in energy results in larger influence of low frequency
+#   # to control for this, we calculate commonality for each frequency-orientation energy
+#   # commonality = abs( h1 - h2 ) / max( h1, h2 )
+#   # commonality ranges between 0 and 1
+#
+#   im = regatta %>% im_gray %>% im_resize_scale( 0.5 )
+#   cell_type = "complex"
+#   imv1 = filter_v1( im, 1:4, 4, cell_type )
+#   F0 = sapply( imv1, mean ) / sapply( imv1, sd )
+#   plot( 1:length( imv1 ), sapply( imv1, mean ) )
+#   plot( 1:length( imv1 ), sapply( lapply( imv1, pow, p = 2 ), mean ) )
+#
+#
+#   imv1_1 = filter_v1( im1, 4, cell_type )
+#   F1 = sapply( imv1_1, mean ) / sapply( imv1_1, sd )
+#
+#   imv1_2 = filter_v1( im2, 4, cell_type )
+#   F2 = sapply( imv1_2, mean ) / sapply( imv1_2, sd )
+#
+#   imv1_3 = filter_v1( im3, 4, cell_type )
+#   F3 = sapply( imv1_3, mean ) / sapply( imv1_3, sd )
+#
+#   plot( 1:32, F3 )
+#   plot( F1, F2 )
+#   im_diff( F1, F2 )
+#
+#   # corrplot::corrplot( cor( imv1s ), method = "circle" )
+#
+#   imv1s = sapply( imv1, as.vector )
+#   col = colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+#   corrplot::corrplot(
+#     cor( imv1s ), method = "color", col = col(200), type = "full", order = "original",
+#     number.cex = .7, diag = T,
+#     addCoef.col = "black", # Add coefficient of correlation
+#     tl.col = "black", tl.srt = 90 # Text label color and rotation
+#   )
+#
+#   # getLocalEnergy( boats, c( 9, 9 ), lambd = 3.6, sigma = 3.6 ) %>% pplot
+#
+#   # getLocalEnergy( boats2, c( 31, 31 ), lambd = 18.2, sigma = 14.6 ) %>% pplot
+# }
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # FFT ----
 
 
@@ -1381,389 +2336,6 @@ fft_transfer = function( from, to, element ){
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# spatial filtering ----
-
-
-#' Box blur
-#' @param im an image
-#' @param radius radius
-#' @return an image
-#' @examples
-#' pplot(box_blur(regatta, 10))
-#' @export
-box_blur = function( im, radius ){
-  if( radius < 1 ){
-    warning( "radius should be equal to or larger than 1.")
-    return( im )
-  }
-  r = radius
-  if( im_nc( im ) != 1 ){
-    imlist = list()
-    for( i in 1:im_nc( im ) ){
-      imlist = c( imlist, list( box_blur( get_channel( im, i ), r ) ) )
-    }
-    return( merge_color( imlist ) )
-  }
-  L = 2 * r + 1
-  width = im_width( im )
-  height = im_height( im )
-  im = im_pad( im, r, method = "mirror" )
-  out = array( 0.0, dim( im ) )
-  cumsum = rowSums( im[ , 1:(2*r), ] )
-  # i = r + 1
-  cumsum = cumsum + im[ ,r + 1 + r, ]
-  out[ , r + 1, ] = cumsum / L
-  for( i in ( r + 2 ):( width + r ) ){
-    cumsum = cumsum + im[ ,i + r, ] - im[ ,i - r - 1, ]
-    out[ , i, ] = cumsum / L
-  }
-  im = out
-  cumsum = colSums( im[ 1:(2*r), , ] )
-  cumsum = cumsum + im[ r + 1 + r, , ]
-  out[ r + 1, , ] = cumsum / L
-  for( i in ( r + 2 ):( height + r ) ){
-    cumsum = cumsum + im[ i + r, , ] - im[ i - r - 1, , ]
-    out[ i, , ] = cumsum / L
-  }
-  out = im_crop( out, r )
-  return( out )
-}
-
-
-#' Box variance
-#' @param im an image
-#' @param radius radius
-#' @return an image
-#' @examples
-#' pplot(box_variance(regatta, 3), rescale = TRUE)
-#' @export
-box_variance = function( im, radius ){
-  box_blur( im^2, radius ) - box_blur( im, radius )^2
-}
-
-
-#' Create a Gaussian kernel
-#' @param sd sd of the normal distribution
-#' @param radius kernel radius. kernel diameter is 2 * radius + 1.
-#' @return an image
-#' @examples
-#' pplot(gauss_kernel(10), rescale = TRUE)
-#' pplot(gauss_kernel(sd = 10, radius = 20), rescale = TRUE)
-#' @export
-gauss_kernel = function( sd, radius = round( 2.5 * sd ) ){
-  if( sd < 0.2 ){
-    warning( "sd must be equal to or larger than 0.2")
-    return( NULL )
-  }
-  L = 2 * radius + 1
-  matx = matrix( stats::dnorm( 1:L, mean = radius + 1, sd = sd ), nrow = L, ncol = L, byrow = FALSE )
-  maty = matrix( stats::dnorm( 1:L, mean = radius + 1, sd = sd ), nrow = L, ncol = L, byrow = TRUE )
-  mat = matx * maty
-  mat = mat / sum( mat )
-  return( nimg( array( mat, c( L, L, 1 ) ) ) )
-}
-
-
-#' Create a gabor filter kernel
-#' @param ksize the size of the gabor kernel. should be odd number (if not, incremented by one).
-#' @param sigma the standard deviation of the Gaussian function
-#' @param lambd the wavelength of the sinusoidal factor
-#' @param theta the orientation of the normal to the parallel stripes of the Gabor function
-#' @param psi the phase offset
-#' @param gamma the spatial aspect ratio
-#' @param normalize if TRUE (default), kernel is normalized (the zero-summing normalization)
-#' @param mask if TRUE, circular mask is applied.
-#' @examples
-#' gb = gabor_kernel( ksize = 61 )
-#' pplot(gb, rescale = TRUE)
-#' gb = gabor_kernel( ksize = 61, theta = pi/6 )
-#' pplot(gb, rescale = TRUE)
-#' @export
-gabor_kernel = function( ksize = sigma * 6, sigma = min( ksize ) / 6, lambd = min( ksize ) / 4,
-                         theta = 0, psi = 0, gamma = 1, normalize = TRUE, mask = FALSE ){
-  if( ksize %% 2 == 0 ){
-    ksize = ksize + 1
-  }
-  if( length( ksize ) == 1 ){
-    ksize = c( ksize, ksize )
-  }
-  sigmaX = sigma
-  sigmaY = sigma / gamma
-  nstds = 3
-  c = cos( theta )
-  s = sin( theta )
-  xmax = ifelse( ksize[ 1 ] > 0, floor( ksize[ 1 ] / 2 ),
-                 round( max( abs( nstds * sigmaX * c ), abs( nstds * sigmaY * s ) ) ) )
-  ymax = ifelse( ksize[ 2 ] > 0, floor( ksize[ 2 ] / 2 ),
-                 round( max( abs( nstds * sigmaX * s ), abs( nstds * sigmaY * c ) ) ) )
-  xmin = -xmax
-  ymin = -ymax
-  scale = 1
-  ex = -0.5 / ( sigmaX * sigmaX )
-  ey = -0.5 / ( sigmaY * sigmaY )
-  cscale = pi * 2 / lambd
-
-  ix = matrix( xmin:xmax, nrow = ymax - ymin + 1, ncol = xmax - xmin + 1, byrow = TRUE )
-  iy = matrix( ymin:ymax, nrow = ymax - ymin + 1, ncol = xmax - xmin + 1 )
-  xr =  ix * c + iy * s
-  yr = -ix * s + iy * c
-
-  kernel = scale * exp( ex * xr * xr + ey * yr * yr ) * cos( cscale * xr - psi )
-
-  if( mask ){
-    size = max( ksize )
-    cx = cy = ceiling( size / 2 )
-    u = matrix( 1:size - cx, ncol = size, nrow = size, byrow = TRUE )
-    v = matrix( 1:size - cy, ncol = size, nrow = size, byrow = FALSE )
-    D = u^2 + v^2
-    kernel[ D > (size/2)^2 ] = 0
-  }
-
-  if ( normalize ){
-    psum = sum( kernel[ kernel > 0 ] )
-    kernel[ kernel > 0 ] = kernel[ kernel > 0 ] / psum
-    nsum = sum( kernel[ kernel < 0 ] )
-    kernel[ kernel < 0 ] = kernel[ kernel < 0 ] / abs( nsum )
-  }
-
-  return( nimg( kernel ) )
-}
-
-
-#' Apply the guided filter
-#' @param p an image
-#' @param radius filter radius
-#' @param epsilon epsilon parameter
-#' @param I guide image
-#' @return an image
-#' @examples
-#' pplot(guided_filter(regatta,8))
-#' @export
-guided_filter = function( p, radius, epsilon = 0.1, I = p ){
-  if( radius < 1 ){
-    warning( "radius should be equal to or larger than 1.")
-    return( p )
-  }
-
-  I_mean = box_blur( I, radius )
-  I_var = box_variance( I, radius )
-  p_mean = box_blur( p, radius )
-
-  a = ( box_blur( I * p, radius ) - I_mean * p_mean ) / ( I_var + epsilon )
-  b = p_mean - a * I_mean
-
-  a_mean = box_blur( a, radius )
-  b_mean = box_blur( b, radius )
-
-  q = a_mean * I + b_mean
-  return( q )
-}
-
-
-#' Apply statistical filter
-#' @param im an image
-#' @param radius kernel radius
-#' @param FUN e.g., min, max, median, mean, var
-#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
-#' @return an image
-#' @examples
-#' pplot(stat_filter(regatta, 1, min))
-#' @export
-stat_filter = function( im, radius, FUN, pad.method = "mirror" ){
-  if( radius < 1 ){
-    warning( "radius should be equal to or larger than 1.")
-    return( im )
-  }
-
-  if( im_nc( im ) > 1 ){
-    imlist = list()
-    for( i in 1:im_nc( im ) ){
-      imlist = c( imlist, list( stat_filter( get_channel( im, i ), radius, FUN, pad.method ) ) )
-    }
-    return( merge_color( imlist ) )
-  }
-
-  im = im_pad( im, radius, method = pad.method )[,,]
-  im2 = im
-  for( cy in ( 1 + radius ):( im_height( im ) - radius ) ){
-    for( cx in ( 1 + radius ):( im_width( im ) - radius ) ){
-      im2[ cy, cx ] = FUN(
-        as.vector( im[ ( cy - radius ):( cy + radius ), ( cx - radius ):( cx + radius ) ] )
-      )
-    }
-  }
-  im2 = im_crop( nimg( im2 ), radius )
-  return( im2 )
-
-  # im = im_pad( im, radius, method = pad.method )[,,]
-  # im2 = matrix2list( im )
-  # for( cy in ( 1 + radius ):( im_height( im ) - radius ) ){
-  #   for( cx in ( 1 + radius ):( im_width( im ) - radius ) ){
-  #     im2[[ cx ]][ cy ] = FUN(
-  #       as.vector( im[ ( cy - radius ):( cy + radius ), ( cx - radius ):( cx + radius ) ] )
-  #     )
-  #   }
-  # }
-  # im2 = list2matrix( im2 )
-  # im2 = im_crop( nimg( im2 ), radius )
-  # return( im2 )
-}
-
-
-#' Convolve an image
-#' @param im an image
-#' @param kernel filter image
-#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
-#' @return an image
-#' @examples
-#' pplot(im_conv(regatta, gauss_kernel(sd = 2)))
-#' @export
-im_conv = function( im, kernel, pad.method = "mirror" ){
-  if( is.null( kernel ) ){
-    return( im )
-  }
-  if( im_nc( im ) > 1 ){
-    imlist = list()
-    for( i in 1:im_nc( im ) ){
-      imlist = c( imlist, list( im_conv( get_channel( im, i ), kernel, pad.method ) ) )
-    }
-    return( merge_color( imlist ) )
-  }
-  npad = floor( max( dim( kernel )[ 1:2 ] ) / 2 )
-  im = im_pad( im, n = npad, method = pad.method )
-  im = imager::convolve( nimg2cimg( im ), nimg2cimg( kernel ) )
-  im = imager::crop.borders( im, nPix = npad )
-  return( cimg2nimg( im ) )
-}
-
-
-#' Get V1 filter parameters
-#' @return a data frame
-#' @export
-V1_params = function(){
-  df = data.frame(
-    band = rep( 1:8, each = 2 ),
-    scale = rep( 1:2, times = 8 ),
-    ksize = seq( from = 7, by = 2, to = 37 ),
-    sigma = c( 2.8,3.6,4.5,5.4,6.3,7.3,8.2,9.2,10.2,11.3,12.3,13.4,14.6,15.8,17.0,18.2 ),
-    lambd = c( 3.5,4.6,5.6,6.8,7.9,9.1,10.3,11.5,12.7,14.1,15.4,16.8,18.2,19.7,21.2,22.8 ),
-    gamma = 0.3
-  )
-  return( df )
-}
-
-
-#' Create a Gabor filter bank
-#' @param id a vector of integer. which cell to use.
-#' @param n_orientation number of orientation
-#' @param cell_type either "simple" or "complex" (default) cell
-#' @return a list of filter kernels
-#' @export
-v1_kernels = function( id, n_orientation = 4, cell_type = "complex" ){
-  filters = list()
-  pars = V1_params()
-  pars = pars[ id, ]
-  for( i in 1:nrow( pars ) ){
-    p = pars[ i, ]
-    n_ori = ifelse( n_orientation == 0, 1, n_orientation )
-    for( t in 1:n_ori ){
-      name = paste0( "i", length( filters ) + 1, "_g", i, "_ori", t )
-      lambd_ = ifelse( n_orientation == 0, 1, p$lambd )
-      gamma_ = ifelse( n_orientation == 0, 1, p$gamma )
-      theta_ = ifelse( n_orientation == 0, 0, ( t - 1 ) * pi / n_ori )
-      f = gabor_kernel( ksize = p$ksize, sigma = p$sigma, lambd = lambd_,
-                            gamma = gamma_, theta = theta_ )
-      filters = c( filters, list( name = f ) )
-      names( filters )[ length( filters ) ] = name
-      if( cell_type == "complex" ){
-        name = paste0( "i", length( filters ) + 1, "_g", i, "_ori", t, "_sine" )
-        f = gabor_kernel( ksize = p$ksize, sigma = p$sigma, lambd = lambd_, psi = pi / 4,
-                              gamma = gamma_, theta = theta_ )
-        filters = c( filters, list( name = f ) )
-        names( filters )[ length( filters ) ] = name
-      }
-    }
-  }
-  return( filters )
-}
-
-
-#' Apply V1 filters to an image
-#' @param im an image
-#' @param id a vector of integer. which cell to use.
-#' @param n_orientation number of orientation
-#' @param cell_type either "simple" or "complex" (default) cell
-#' @return a list of images
-#' @examples
-#' im = filter_v1(im_gray(regatta), 1:2)
-#' pplot(im[[1]], rescale = TRUE)
-#' @export
-filter_v1 = function( im, id, n_orientation = 4, cell_type = "complex" ){
-  output = list()
-  filt = v1_kernels( id, n_orientation, cell_type )
-
-  if( cell_type == "simple" ){
-    for( i in 1:length( filt ) ){
-      output = c( output, list( im_conv( im, filt[[ i ]] ) ) )
-    }
-  } else if( cell_type == "complex" ){
-    for( i in seq( 1, length( filt ), by = 2 ) ){
-      im1 = im_conv( im, filt[[ i + 0 ]] )
-      im2 = im_conv( im, filt[[ i + 1 ]] )
-      output = c( output, list( sqrt( im1^2 + im2^2 ) ) )
-    }
-  }
-
-  return( output)
-}
-
-
-# v1_examples = function(){
-#   # low frequency tends to have larger spectrum power (fourier energy)
-#   # simply taking the difference in energy results in larger influence of low frequency
-#   # to control for this, we calculate commonality for each frequency-orientation energy
-#   # commonality = abs( h1 - h2 ) / max( h1, h2 )
-#   # commonality ranges between 0 and 1
-#
-#   im = regatta %>% im_gray %>% im_resize_scale( 0.5 )
-#   cell_type = "complex"
-#   imv1 = filter_v1( im, 1:4, 4, cell_type )
-#   F0 = sapply( imv1, mean ) / sapply( imv1, sd )
-#   plot( 1:length( imv1 ), sapply( imv1, mean ) )
-#   plot( 1:length( imv1 ), sapply( lapply( imv1, pow, p = 2 ), mean ) )
-#
-#
-#   imv1_1 = filter_v1( im1, 4, cell_type )
-#   F1 = sapply( imv1_1, mean ) / sapply( imv1_1, sd )
-#
-#   imv1_2 = filter_v1( im2, 4, cell_type )
-#   F2 = sapply( imv1_2, mean ) / sapply( imv1_2, sd )
-#
-#   imv1_3 = filter_v1( im3, 4, cell_type )
-#   F3 = sapply( imv1_3, mean ) / sapply( imv1_3, sd )
-#
-#   plot( 1:32, F3 )
-#   plot( F1, F2 )
-#   im_diff( F1, F2 )
-#
-#   # corrplot::corrplot( cor( imv1s ), method = "circle" )
-#
-#   imv1s = sapply( imv1, as.vector )
-#   col = colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
-#   corrplot::corrplot(
-#     cor( imv1s ), method = "color", col = col(200), type = "full", order = "original",
-#     number.cex = .7, diag = T,
-#     addCoef.col = "black", # Add coefficient of correlation
-#     tl.col = "black", tl.srt = 90 # Text label color and rotation
-#   )
-#
-#   # getLocalEnergy( boats, c( 9, 9 ), lambd = 3.6, sigma = 3.6 ) %>% pplot
-#
-#   # getLocalEnergy( boats2, c( 31, 31 ), lambd = 18.2, sigma = 14.6 ) %>% pplot
-# }
-
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Photoshop ----
 
 
@@ -1805,579 +2377,6 @@ CIELAB_visualize = function( im, scale = FALSE ){
   im_a = merge_color( list( LM, A, C0 ) ) %>% Lab2sRGB
   im_b = merge_color( list( LM, C0, B ) ) %>% Lab2sRGB
   return( list( L = im_L, a = im_a, b = im_b ) )
-}
-
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# stats ----
-
-
-#' L2 distance of pixel value
-#' @param im1 an image
-#' @param im2 an image
-#' @return mean squared error
-#' @examples
-#' im_diff(regatta, regatta^2)
-#' @export
-im_diff = function( im1, im2 ){
-  if( imager::is.cimg( im1 ) ){
-    im1 = cimg2nimg( im1 )
-  }
-  if( imager::is.cimg( im2 ) ){
-    im2 = cimg2nimg( im2 )
-  }
-  return( mean( ( im1 - im2 )^2 ) )
-}
-
-
-#' Get moment statistics of a vector/array
-#' @param x data
-#' @param order order of the moment to be computed
-#' @return a numeric vector
-#' @examples
-#' get_moments( rnorm( 20 ) ) # get the 1st to 4th order moments
-#' get_moments( rnorm( 20 ), order = 3 ) # get only the 3rd order moment (skewness)
-#' get_moments( rnorm( 20 ), order = c( 3, 1 ) ) # get skewness and mean
-#' @export
-get_moments = function( x, order = 1:4 ){
-  m = rep( 0.0, times = length( order ) )
-  names( m ) = c( "mean", "sd", "skewness", "kurtosis" )[ order ]
-  for( i in 1:length( order ) ){
-    if( order[ i ] == 1 ){
-      m[ i ] = base::mean( x )
-    } else if( order[ i ] == 2 ){
-      m[ i ] = stats::sd( x )
-    } else if( order[ i ] == 3 ){
-      m[ i ] = moments::skewness( x )
-    } else if( order[ i ] == 4 ){
-      m[ i ] = moments::kurtosis( x )
-    }
-  }
-  return( m )
-}
-
-
-#' Get moment statistics of an image
-#' @param im an image
-#' @param channel color channel
-#' @param order order of the moment to be computed
-#' @param space color space, either "CIELAB" (default) or "RGB
-#' @param max_size resize input image before calculation of moments
-#' @return a data frame of moment values
-#' @examples
-#' im_moments(regatta) # moments in CIELAB color space
-#' im_moments(regatta, space = "RGB") # moments of RGB channels
-#' im_moments(regatta, channel = 1) # L channel of CIELAB color space
-#' im_moments(regatta, channel = "L") # same as above
-#' im_moments(regatta, channel = 1, space = "RGB") # R channel of the input image
-#' im_moments(regatta, channel = 2:3, order = c(2, 3)) # sd and skew in a and b channels
-#' im_moments(regatta, channel = c("a", "b"), order = c(2, 3)) # same as above
-#' @export
-im_moments = function( im, channel = 1:3, order = 1:4, space = "CIELAB", max_size = 1024 ){
-  if( im_nc( im ) == 1 ){
-    channel = 1
-  }
-  df = data.frame()
-  im = im_resize_limit( im, max_size )
-  if( space == "CIELAB" ){
-    if( im_nc( im ) > 2 ){
-      im = sRGB2Lab( im )
-    }
-    clabel = c( "L", "a", "b" )
-  } else {
-    clabel = c( "R", "G", "B", "A" )
-  }
-  channel = force_channel_label_to_num( channel )
-  for( i in 1:length( channel ) ){
-    mmt = get_moments( get_channel( im, channel[ i ] ), order )
-    df = rbind( df, data.frame(
-      channel = clabel[ channel[ i ] ], moment = names( mmt ), value = unname( mmt ) ) )
-  }
-  return( df )
-}
-
-
-#' Apply shift and rescale to the distribution of pixel values
-#' @param im an image
-#' @param channel color channel
-#' @param mean center of distribution. when not given, the mean of that channel is used.
-#' @param sd dispersion of distribution. when not given, the sd of that channel is used.
-#' @param space color space
-#' @param clamp either TRUE (default, output pixel value is clamped to range 0-1) or FALSE
-#' @return an image
-#' @examples
-#' im_moments(regatta) # before manipulation
-#' im_moments(im_distribute(regatta, "b", mean = 0, sd = 20)) # b channel is adjusted
-#' pplot(im_distribute(regatta, "b", mean = 0, sd = 20)) # see the effect
-#' pplot(im_distribute(regatta, c("a", "b"), c(-5, 0), c(15, 20))) # adjust two channels simultaneously
-#' @export
-im_distribute = function( im, channel, mean = NULL, sd = NULL, space = "CIELAB", clamp = TRUE ){
-  channel = force_channel_label_to_num( channel )
-  if( space == "CIELAB" && im_nc( im ) > 2 ){
-    im = sRGB2Lab( im )
-  }
-  for( i in 1:length( channel ) ){
-    if( is.null( mean[ i ] ) || is.na( mean[ i ] ) ){
-      M = base::mean( get_channel( im, channel[ i ] ) )
-    } else {
-      M = mean[ i ]
-    }
-    if( is.null( sd[ i ] ) || is.na( sd[ i ] ) ){
-      S = stats::sd( get_channel( im, channel[ i ] ) )
-    } else {
-      S = sd[ i ]
-    }
-    I = im[ , , channel[ i ], drop = F ]
-    im[ , , channel[ i ] ] = S * ( ( I - base::mean( I ) ) / stats::sd( I ) ) + M
-  }
-  if( space == "CIELAB" && im_nc( im ) > 2 ){
-    im = Lab2sRGB( im )
-  }
-  if( clamp ){
-    im = clamping( im )
-  }
-  return( im )
-}
-
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# math ----
-
-
-#' Rescale numeric vector to have a range between 0 to 1
-#' @param x a numeric vector
-#' @return a rescaled numeric vector
-#' @seealso \code{\link{rescaling}}
-#' @examples
-#' rescaling01( 1:5 )
-#' @export
-rescaling01 = function( x ){
-  if( max( x ) == min( x ) ){
-    return( x )
-  } else {
-    return( ( x - min( x ) ) / ( max( x ) - min( x ) ) )
-  }
-}
-
-
-#' Rescale numeric vector to have a specified range
-#' @param x a numeric vector
-#' @param from lowest value
-#' @param to highest value
-#' @return a rescaled numeric vector
-#' @seealso \code{\link{rescaling01}}
-#' @examples
-#' rescaling( 1:5, from = 0, to = 10 )
-#' @export
-rescaling = function( x, from = 0, to = 1 ){
-  if( max( x ) == min( x ) ){
-    return( x )
-  } else {
-    return( from + ( to - from ) * rescaling01( x ) )
-  }
-}
-
-
-#' Clamp values to a minimum and maximum value
-#' @param x a numeric vector
-#' @param min minimum value
-#' @param max maximum value
-#' @return a numeric vector
-#' @examples
-#' clamping( -5:5, min = -3, max = 3 )
-#' @export
-clamping = function( x, min = 0, max = 1 ){
-  x[ x < min ] = min
-  x[ x > max ] = max
-  return( x )
-}
-
-
-#' Calculate a cubic spline
-#' @param x a numeric vector
-#' @param low minimum value of output
-#' @param high maximum value of output
-#' @return a numeric vector
-#' @examples
-#' x = seq( from = 0, to = 1, by = 0.01 )
-#' plot( x, cubic_spline( x ) )
-#' @export
-cubic_spline = function( x, low = 0, high = 1 ){
-  if( low == high ){
-    warning( "low and high must be different!" )
-  } else if( low > high ){
-    return( 1 - ( cubic_spline( x, high, low ) ) )
-  }
-  x2 = x
-  t = x[ x > low & x < high ]
-  t = ( t - low ) / ( high - low )
-  x2[ x > low & x < high ] = t^2 * ( 3 - 2 * t )
-  x2[ x <= low ] = 0
-  x2[ x >= high ] = 1
-  return( x2 )
-}
-
-
-#' Calculate the Euclidean distance between two points
-#' @param x1 x coordinate of point 1
-#' @param y1 y coordinate of point 1
-#' @param x2 x coordinate of point 2
-#' @param y2 y coordinate of point 2
-#' @return distance between point 1 and 2
-#' @export
-eucdist = function( x1, y1, x2, y2 ){
-  return( sqrt( ( x1 - x2 )^2 + ( y1 - y2 )^2 ) )
-}
-
-
-#' Shift operation
-#' @param v a numeric vector
-#' @param lag a numeric
-#' @return a lagged vector
-#' @export
-vec_shift = function( v, lag = 0 ){
-  if( lag == 0 || abs( lag ) == length( v ) ){
-    return( v )
-  }
-  index = 1:length( v )
-  lag = lag %% length( index )
-  index = c( index[ length( index ) - lag + 1 ]:max( index ), 1:index[ length( index ) - lag ] )
-  return( index )
-}
-
-
-#' Power operation
-#' @param x a numeric vector
-#' @param p power term
-#' @return a numeric vector
-#' @export
-pow = function( x, p ){
-  return( x^p )
-}
-
-
-#' Calculate range
-#' @param x a numeric vector
-#' @return the range of x
-#' @export
-MinMax = MaxMin = function( x ){
-  return( max( x ) - min( x ) )
-}
-
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# data structure ----
-
-
-matrix2list = function( x ){
-  lapply(seq_len(ncol(x)), function(i) x[,i])
-}
-
-
-list2matrix = function( x ){
-  matrix(unlist(x, use.names = FALSE), ncol = length( x ), byrow = FALSE)
-}
-
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# string ----
-
-
-get_image_name_from_file = function( file ){
-  tryCatch({
-    name = stringr::str_split( file, "/" )[[ 1 ]]
-    name = name[ length( name ) ]
-    name = stringr::str_split( name, "[.]" )[[ 1 ]]
-    return( name[ 1 ] )
-  },
-  error = function(e) {
-    return( "-" )
-  })
-
-}
-
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# color space ----
-
-
-#' sRGB to linear RGB conversion
-#' @param im an image
-#' @return an image
-#' @export
-sRGB2RGB = function( im ){
-  mask = im < 0.04045
-  im[ mask ] = im[ mask ] / 12.92
-  im[ !mask ] = ( ( im[ !mask ] + 0.055 ) / 1.055 )^2.4
-  return( im )
-}
-
-
-#' linear RGB to sRGB conversion
-#' @param im an image
-#' @return an image
-#' @export
-RGB2sRGB = function( im ){
-  mask = im < 0.0031308
-  im[ mask ] = im[ mask ] * 12.92
-  im[ !mask ] = 1.055 * im[ !mask ]^( 1 / 2.4 ) - 0.055
-  return( im )
-}
-
-
-#' sRGB to HSL conversion
-#' @param im an image
-#' @return an image
-#' @export
-sRGB2HSL = function( im ){
-  cimg = nimg2cimg( im_tricolored( im ) )
-  M = pmax( imager::R( cimg ), imager::G( cimg ), imager::B( cimg ) )
-  m = pmin( imager::R( cimg ), imager::G( cimg ), imager::B( cimg ) )
-  C = M - m
-  # calculate H
-  hue = imager::cimg( array( 0, c( dim( cimg )[ 1:3 ], 1 ) ) )
-  H1 = ( imager::G( cimg ) - imager::B( cimg ) ) / C
-  H1[ , , 1, 1 ] = H1[ , , 1, 1 ] + ifelse( H1[ , , 1, 1 ] < 0, 6, 0 )
-  H2 = ( imager::B( cimg ) - imager::R( cimg ) ) / C + 2
-  H3 = ( imager::R( cimg ) - imager::G( cimg ) ) / C + 4
-  hue[ M == imager::R( cimg ) ] = H1[ M == imager::R( cimg ) ]
-  hue[ M == imager::G( cimg ) ] = H2[ M == imager::G( cimg ) ]
-  hue[ M == imager::B( cimg ) ] = H3[ M == imager::B( cimg ) ]
-  hue[ ( imager::R( cimg ) == imager::G( cimg ) ) & ( imager::R( cimg ) == imager::B( cimg ) ) ] = 0
-  hue = hue * 60
-  hue = hue %% 360
-  # calculate L and S
-  L = ( M + m ) / 2
-  S = imager::cimg( array( 0, c( dim( cimg )[ 1:3 ], 1 ) ) )
-  S = ( M - m ) / ( 1 - abs( M + m - 1 ) )
-  cimg = imager::imappend( list( hue, S, L ), axis = "c" )
-  return( cimg2nimg( cimg ) )
-}
-
-
-#' RGB to XYZ conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-RGB2XYZ = function( im, use.D65 = TRUE ){
-  if( use.D65 ){
-    X = 0.4124564 * get_R( im ) + 0.3575761 * get_G( im ) + 0.1804375 * get_B( im )
-    Y = 0.2126729 * get_R( im ) + 0.7151522 * get_G( im ) + 0.0721750 * get_B( im )
-    Z = 0.0193339 * get_R( im ) + 0.1191920 * get_G( im ) + 0.9503041 * get_B( im )
-  } else {
-    X = 0.4360747 * get_R( im ) + 0.3850649 * get_G( im ) + 0.1430804 * get_B( im )
-    Y = 0.2225045 * get_R( im ) + 0.7168786 * get_G( im ) + 0.0606169 * get_B( im )
-    Z = 0.0139322 * get_R( im ) + 0.0971045 * get_G( im ) + 0.7141733 * get_B( im )
-  }
-  return( merge_color( list( X, Y, Z ) ) )
-}
-
-
-#' XYZ to RGB conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-XYZ2RGB = function( im, use.D65 = TRUE ){
-  if( use.D65 ){
-    R =  3.24045484 * get_R( im ) - 1.5371389 * get_G( im ) - 0.49853155 * get_B( im )
-    G = -0.96926639 * get_R( im ) + 1.8760109 * get_G( im ) + 0.04155608 * get_B( im )
-    B =  0.05564342 * get_R( im ) - 0.2040259 * get_G( im ) + 1.05722516 * get_B( im )
-  } else {
-    R =  3.13385637 * get_R( im ) - 1.6168668 * get_G( im ) - 0.49061477 * get_B( im )
-    G = -0.97876856 * get_R( im ) + 1.9161416 * get_G( im ) + 0.03345412 * get_B( im )
-    B =  0.07194517 * get_R( im ) - 0.2289913 * get_G( im ) + 1.40524267 * get_B( im )
-  }
-  return( merge_color( list( R, G, B ) ) )
-}
-
-
-#' sRGB to XYZ conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-sRGB2XYZ = function( im, use.D65 = TRUE ){
-  im %>% sRGB2RGB %>% RGB2XYZ( use.D65 )
-}
-
-
-#' XYZ to sRGB conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-XYZ2sRGB = function( im, use.D65 = TRUE ){
-  im %>% XYZ2RGB( use.D65 ) %>% RGB2sRGB
-}
-
-
-#' XYZ to Lab conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-XYZ2Lab = function( im, use.D65 = TRUE ){
-  # reference white
-  if( use.D65 ){
-    white = c( 0.95047, 1, 1.08883 )
-  } else {
-    white = c( 0.96420, 1, 0.82491 )
-  }
-  im[ ,,1 ] = im[ ,,1, drop = FALSE ] / white[ 1 ]
-  im[ ,,3 ] = im[ ,,3, drop = FALSE ] / white[ 3 ]
-  #
-  mask = 24389 * im > 216
-  im[ mask ] = im[ mask ]^( 1 / 3 )
-  im[ !mask ] = ( 24389 * im[ !mask ] / 27 + 16 ) / 116
-  fx = im[ ,,1, drop = FALSE ]
-  fy = im[ ,,2, drop = FALSE ]
-  fz = im[ ,,3, drop = FALSE ]
-  #
-  L = ( 116 * fy - 16 )
-  a = 500 * ( fx - fy )
-  b = 200 * ( fy - fz )
-  return( merge_color( list( L, a, b ) ) )
-}
-
-
-#' Lab to XYZ conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-Lab2XYZ = function( im, use.D65 = TRUE ){
-  eta = 216 / 24389
-  kappa = 24389 / 27
-  #
-  fy = ( im[,,1, drop = FALSE ] + 16 ) / 116
-  fx = 0.002 * im[,,2, drop = FALSE ] + fy
-  fz = fy - 0.005 * im[,,3, drop = FALSE ]
-  # x = fx^3 > eta ? fx^3 : ( 116 * fx - 16 ) / kappa
-  mask = fx^3 > eta
-  fx[ mask ] = fx[ mask ]^3
-  fx[ !mask ] = ( 116 * fx[ !mask ] - 16 ) / kappa
-  # y = L > 8 ? ( ( L + 16 ) / 116 )^3 : L / kappa
-  L = im[,,1, drop = FALSE ]
-  mask = L > 8
-  L[ mask ] = ( ( L[ mask ] + 16 ) / 116 )^3
-  L[ !mask ] = L[ !mask ] / kappa
-  # z = fz^3 > eta ? fz^3 : ( 116 * fz - 16 ) / kappa
-  mask = fz^3 > eta
-  fz[ mask ] = fz[ mask ]^3
-  fz[ !mask ] = ( 116 * fz[ !mask ] - 16 ) / kappa
-  # reference white
-  if( use.D65 ){
-    white = c( 0.95047, 1, 1.08883 )
-  } else {
-    white = c( 0.96420, 1, 0.82491 )
-  }
-  fx = fx * white[ 1 ]
-  fz = fz * white[ 3 ]
-  return( merge_color( list( fx, L, fz ) ) )
-}
-
-
-#' sRGB to Lab conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-sRGB2Lab = function( im, use.D65 = TRUE ){
-  XYZ2Lab( sRGB2XYZ( im, use.D65 ), use.D65 )
-}
-
-
-#' Lab to sRGB conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-Lab2sRGB = function( im, use.D65 = TRUE ){
-  XYZ2sRGB( Lab2XYZ( im, use.D65 ), use.D65 )
-}
-
-
-#' RGB to Lab conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-RGB2Lab = function( im, use.D65 = TRUE ){
-  im %>% RGB2XYZ( use.D65 ) %>% XYZ2Lab( use.D65 )
-}
-
-
-#' Lab to RGB conversion
-#' @param im an image
-#' @param use.D65 reference white, either TRUE (D65 is used) or FALSE (D50 is used).
-#' @return an image
-#' @export
-Lab2RGB = function( im, use.D65 = TRUE ){
-  im %>% Lab2XYZ( use.D65 ) %>% XYZ2RGB( use.D65 )
-}
-
-
-#' RGB to YUV conversion
-#' @param im an image
-#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
-#' @return an image
-#' @source \url{ https://en.wikipedia.org/wiki/YUV }
-#' @export
-RGB2YUV = function( im, use.B601 = FALSE ){
-  if( use.B601 ){
-    Y =   0.299   * get_R( im ) + 0.587   * get_G( im ) + 0.114   * get_B( im )
-    U = - 0.14713 * get_R( im ) - 0.28886 * get_G( im ) + 0.436   * get_B( im )
-    V =   0.615   * get_R( im ) - 0.51499 * get_G( im ) - 0.10001 * get_B( im )
-  } else {
-    Y =   0.2126  * get_R( im ) + 0.7152  * get_G( im ) + 0.0722  * get_B( im )
-    U = - 0.09991 * get_R( im ) - 0.33609 * get_G( im ) + 0.436   * get_B( im )
-    V =   0.615   * get_R( im ) - 0.55861 * get_G( im ) - 0.05639 * get_B( im )
-  }
-  return( merge_color( list( Y, U, V ) ) )
-}
-
-
-#' YUV to RGB conversion
-#' @param im an image
-#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
-#' @return an image
-#' @source \url{ https://en.wikipedia.org/wiki/YUV }
-#' @export
-YUV2RGB = function( im, use.B601 = FALSE ){
-  if( use.B601 ){
-    R = 1 * get_R( im ) + 0       * get_G( im ) + 1.13983 * get_B( im )
-    G = 1 * get_R( im ) - 0.39465 * get_G( im ) - 0.58060 * get_B( im )
-    B = 1 * get_R( im ) + 2.03211 * get_G( im ) + 0       * get_B( im )
-  } else {
-    R = 1 * get_R( im ) + 0       * get_G( im ) + 1.28033 * get_B( im )
-    G = 1 * get_R( im ) - 0.21482 * get_G( im ) - 0.38059 * get_B( im )
-    B = 1 * get_R( im ) + 2.12798 * get_G( im ) + 0       * get_B( im )
-  }
-  return( merge_color( list( R, G, B ) ) )
-}
-
-
-#' sRGB to YUV conversion
-#' @param im an image
-#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
-#' @return an image
-#' @source \url{ https://en.wikipedia.org/wiki/YUV }
-#' @export
-sRGB2YUV = function( im, use.B601 = FALSE ){
-  im %>% sRGB2RGB %>% RGB2YUV( use.B601 )
-}
-
-
-#' YUV to sRGB conversion
-#' @param im an image
-#' @param use.B601 logical. Either TRUE (SDTV with BT.601) or FALSE (HDTV with BT.709).
-#' @return an image
-#' @source \url{ https://en.wikipedia.org/wiki/YUV }
-#' @export
-YUV2sRGB = function( im,  use.B601 = FALSE ){
-  im %>% YUV2RGB( use.B601 ) %>% RGB2sRGB
 }
 
 
@@ -2499,77 +2498,118 @@ gf_reconstruct = function( dec ){
 #           "CFD Version 2.0.3/img/CFD-AF-237-223-N.jpg" ) ) %>%
 #   im_crop( c( 0, 422, 118, 422 ) ) %>% im_resize_limit( 512 )
 
+# oily   HH+ boost
+# matte  HH+ reduce
+# stain  HH- boost
+# smooth HH- reduce + [1HA, HL-] blur # smooth2
+# aging  HLA boost + HHN boost # aging2
+# glossy LAA boost
+# shadow LA- boost + blur
+
+# medit( face2, params = list(
+#   list( freq = "H", amp = "H", sign = "+", scale = .2 ),
+#   list( freq = "H", amp = "H", sign = "-", scale = .2 )
+#   ) ) %>% pplot
+
 #' Band-sift material editing
 #' @param im an image
-#' @param effect either "oily", "matte", "glossy", "shadow", "shadow2", "aging", "aging2", "smooth", or "smooth2"
-#' @param strength a scaling factor
-#' @param params a list. freq, amp, sign, strength
+#' @param effect either "oily", "matte", "glossy", "stain", "shadow", "aging", "aging2", "smooth", or "smooth2"
+#' @param scale a scaling factor
+#' @param params a list. freq, amp, sign, scale
 #' @param log_epsilon offset for log transformation
 #' @param filter_epsilon epsilon parameter
 #' @return an image
 #' @examples
 #' \donttest{
-#' im = bandsift(regatta, "oily")
-#' pplot(im)
-#' im = bandsift(regatta, params = list(freq = "H", amp = "H", sign = "+", strength = 2))
+#' im = im_resize_scale(regatta, 0.6) # use a smaller image for speed
+#'
+#' pplot(medit(im, effect = "oily"))
+#' pplot(medit(im, effect = "oily", scale = 4))
+#'
+#' oily = list(freq = "H", amp = "H", sign = "+", scale = 2)
+#' pplot(medit(im, params = oily)) # oily effect
+#' smooth = list(freq = "H", amp = "H", sign = "-", scale = 0.25)
+#' pplot(medit(im, params = list(oily, smooth))) # oily and smooth effects
 #' }
 #' @export
-bandsift = function( im, effect, strength, params, log_epsilon = 0.0001, filter_epsilon = 0.01 ){
+medit = function( im, effect, scale, params, log_epsilon = 0.0001, filter_epsilon = 0.01 ){
   if( im_nc( im ) == 3 ){
     lab = sRGB2Lab( im )
-    bs = bandsift( get_channel( lab, 1 ) / 100, effect, strength, params, log_epsilon, filter_epsilon )
+    bs = medit( get_channel( lab, 1 ) / 100, effect, scale, params, log_epsilon, filter_epsilon )
     return( clamping( Lab2sRGB( merge_color( list( bs * 100, get_G( lab ), get_B( lab ) ) ) ) ) )
   } else {
     dec = gf_decompose( get_L( im ), log_epsilon, filter_epsilon )
   }
 
-  if( missing( strength ) ){
-    if( ! missing( params ) ){
-      strength = params$strength
-    } else if( effect %in% c( "matte", "smooth", "smooth2" ) ){
-      strength = 0.25
-    } else if( effect %in% c( "oily" ) ){
-      strength = 2
-    } else if( effect %in% c( "shadow", "aging", "aging2", "glossy" ) ){
-      strength = 2.5
-    } else if( effect %in% c( "shadow2" ) ){
-      strength = 8
-    }
-  }
-
   if( ! missing( effect ) ){
-    params = list()
-    # freq
-    if( effect %in% c( "oily", "matte", "shadow", "aging", "smooth", "aging2", "smooth2" ) ){
-      params$freq = "H"
-    } else if( effect %in% c( "glossy", "shadow2" ) ){
-      params$freq = "L"
-    }
-    # amp
-    if( effect %in% c( "oily", "matte", "shadow", "smooth", "smooth2" ) ){
-      params$amp = "H"
-    } else if( effect %in% c( "aging", "aging2" ) ){
-      params$amp = "L"
-    } else if( effect %in% c( "glossy", "shadow2" ) ){
-      params$amp = "A"
-    }
-    # sign
-    if( effect %in% c( "oily", "matte" ) ){
-      params$sign = "+"
-    } else if( effect %in% c( "shadow", "shadow2", "smooth", "smooth2" ) ){
-      params$sign = "-"
-    } else if( effect %in% c( "aging", "aging2", "glossy" ) ){
-      params$sign = "A"
-    }
+    params = medit_preset_params( effect, scale )
   }
 
+  if( class( params[[ 1 ]] ) == "list" ){
+    for( i in 1:length( params ) ){
+      dec = medit_edit_dec( dec, medit_convert_params( params[[ i ]], dec$depth ) )
+    }
+  } else {
+    params = medit_convert_params( params, dec$depth )
+    dec = medit_edit_dec( dec, params )
+  }
+
+  rec = clamping( gf_reconstruct( dec ) )
+  return( rec )
+}
+
+
+medit_preset_params = function( effect, scale ){
+  params = list()
+  params$effect = effect
+  # scale
+  if( missing( scale ) ){
+    if( effect %in% c( "matte", "smooth", "smooth2" ) ){
+      params$scale = 0.25
+    } else if( effect %in% c( "oily" ) ){
+      params$scale = 2
+    } else if( effect %in% c( "stain", "aging", "aging2", "glossy" ) ){
+      params$scale = 2.5
+    } else if( effect %in% c( "shadow" ) ){
+      params$scale = 8
+    }
+  } else {
+    params$scale = scale
+  }
+  # freq
+  if( effect %in% c( "oily", "matte", "stain", "aging", "smooth", "aging2", "smooth2" ) ){
+    params$freq = "H"
+  } else if( effect %in% c( "glossy", "shadow" ) ){
+    params$freq = "L"
+  }
+  # amp
+  if( effect %in% c( "oily", "matte", "stain", "smooth", "smooth2" ) ){
+    params$amp = "H"
+  } else if( effect %in% c( "aging", "aging2" ) ){
+    params$amp = "L"
+  } else if( effect %in% c( "glossy", "shadow" ) ){
+    params$amp = "A"
+  }
+  # sign
+  if( effect %in% c( "oily", "matte" ) ){
+    params$sign = "+"
+  } else if( effect %in% c( "stain", "shadow", "smooth", "smooth2" ) ){
+    params$sign = "-"
+  } else if( effect %in% c( "aging", "aging2", "glossy" ) ){
+    params$sign = "A"
+  }
+  return( params )
+}
+
+
+medit_convert_params = function( params, depth ){
   if( is.character( params$freq ) ){
     if( params$freq == "A" ){
-      freq = 1:dec$depth
+      params$freq = 1:depth
     } else if( params$freq == "H" ){
-      freq = 1:floor( dec$depth / 2 )
+      params$freq = 1:floor( depth / 2 )
     } else if( params$freq == "L" ){
-      freq = ( floor( dec$depth / 2 ) + 1 ):dec$depth
+      params$freq = ( floor( depth / 2 ) + 1 ):depth
     }
   }
   if( params$amp == "A" ){
@@ -2586,19 +2626,53 @@ bandsift = function( im, effect, strength, params, log_epsilon = 0.0001, filter_
   } else {
     sign = c( 0, 1, 0, 1 )
   }
-  ind = which( amp & sign )
+  params$ind = which( amp & sign )
+  return( params )
+}
 
-  for( f in freq ){
-    for( i in ind ){
-      dec$L[[ f ]][[ i ]] = dec$L[[ f ]][[ i ]] * strength
-      # dec[[ f ]][[ i ]] = pmax(
-      #   box_blur( dec[[ f ]][[ i ]] * strength, 1 ), dec[[ f ]][[ i ]] * strength * 0.6 )
-      # dec[[ f ]][[ index ]] = im_conv( dec[[ f ]][[ index ]] * strength * 1, get_gauss_filter( 1 ) )
+
+medit_edit_dec = function( dec, params ){
+  if( ! is.null( params$effect ) ){
+    if( params$effect == "aging2" ){
+      for( f in params$freq ){
+        dec$L[[ f ]][[ 3 ]] = dec$L[[ f ]][[ 3 ]] * params$scale * 0.8
+        dec$L[[ f ]][[ 4 ]] = dec$L[[ f ]][[ 4 ]] * params$scale
+        if( f != 1 ){
+          dec$L[[ f ]][[ 2 ]] = dec$L[[ f ]][[ 2 ]] * params$scale * 0.7 # dark spots
+        }
+      }
+    } else if( params$effect == "shadow" ){
+      for( f in params$freq ){
+        for( i in params$ind ){
+          dec$L[[ f ]][[ i ]] = im_conv( dec$L[[ f ]][[ i ]] * params$scale, gauss_kernel( i - 1 ) )
+        }
+      }
+    } else if( params$effect == "smooth2" ){
+      for( f in params$freq ){
+        dec$L[[ f ]][[ 2 ]] = dec$L[[ f ]][[ 2 ]] * params$scale # original
+        # blur
+        blur_radius = min( min( im_size( im ) ), round( -5 * log( abs( params$scale ) ) ) )
+        dec$L[[ f ]][[ 4 ]] = box_blur( dec$L[[ f ]][[ 4 ]], blur_radius )
+        if( f == 1 ){
+          dec$L[[ 1 ]][[ 1 ]] = box_blur( dec$L[[ 1 ]][[ 1 ]], 1 )
+          dec$L[[ 1 ]][[ 2 ]] = box_blur( dec$L[[ 1 ]][[ 2 ]], 1 )
+        }
+      }
+    } else {
+      for( f in params$freq ){
+        for( i in params$ind ){
+          dec$L[[ f ]][[ i ]] = dec$L[[ f ]][[ i ]] * params$scale
+        }
+      }
+    }
+  } else {
+    for( f in params$freq ){
+      for( i in params$ind ){
+        dec$L[[ f ]][[ i ]] = dec$L[[ f ]][[ i ]] * params$scale
+      }
     }
   }
-
-  rec = clamping( gf_reconstruct( dec ) )
-  return( rec )
+  return( dec )
 }
 
 
@@ -2621,7 +2695,8 @@ bandsift = function( im, effect, strength, params, log_epsilon = 0.0001, filter_
 create_dead_leaves = function( height, width = height, shape = "square", grayscale = FALSE,
                                sigma_n = 2, rmin = 0.02, rmax = 0.5 ){
   k = 100
-  r_list = seq( from = rmin * max( width, height ), to = rmax * max( width, height ), length.out = k )
+  r_list = seq(
+    from = rmin * max( width, height ), to = rmax * max( width, height ), length.out = k )
   r_dist = 1 / r_list^sigma_n
   if( sigma_n > 0 ){
     r_dist = r_dist - 1 / ( rmax * max( width, height ) )^sigma_n
