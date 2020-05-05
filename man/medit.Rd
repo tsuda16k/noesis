@@ -4,16 +4,16 @@
 \alias{medit}
 \title{Band-sift material editing}
 \usage{
-medit(im, effect, strength, params, log_epsilon = 1e-04, filter_epsilon = 0.01)
+medit(im, effect, scale, params, log_epsilon = 1e-04, filter_epsilon = 0.01)
 }
 \arguments{
 \item{im}{an image}
 
-\item{effect}{either "oily", "matte", "glossy", "shadow", "shadow2", "aging", "aging2", "smooth", or "smooth2"}
+\item{effect}{either "oily", "matte", "glossy", "stain", "shadow", "aging", "aging2", "smooth", or "smooth2"}
 
-\item{strength}{a scaling factor}
+\item{scale}{a scaling factor}
 
-\item{params}{a list. freq, amp, sign, strength}
+\item{params}{a list. freq, amp, sign, scale}
 
 \item{log_epsilon}{offset for log transformation}
 
@@ -27,8 +27,14 @@ Band-sift material editing
 }
 \examples{
 \donttest{
-im = medit(regatta, "oily")
-pplot(im)
-im = medit(regatta, params = list(freq = "H", amp = "H", sign = "+", strength = 2))
+im = im_resize_scale(regatta, 0.6) # use a smaller image for speed
+
+pplot(medit(im, effect = "oily"))
+pplot(medit(im, effect = "oily", scale = 4))
+
+oily = list(freq = "H", amp = "H", sign = "+", scale = 2)
+pplot(medit(im, params = oily)) # oily effect
+smooth = list(freq = "H", amp = "H", sign = "-", scale = 0.25)
+pplot(medit(im, params = list(oily, smooth))) # oily and smooth effects
 }
 }

@@ -2651,7 +2651,7 @@ medit_edit_dec = function( dec, params ){
       for( f in params$freq ){
         dec$L[[ f ]][[ 2 ]] = dec$L[[ f ]][[ 2 ]] * params$scale # original
         # blur
-        blur_radius = min( min( im_size( im ) ), round( -5 * log( abs( params$scale ) ) ) )
+        blur_radius = min( min( dec$size ), round( -5 * log( abs( params$scale ) ) ) )
         dec$L[[ f ]][[ 4 ]] = box_blur( dec$L[[ f ]][[ 4 ]], blur_radius )
         if( f == 1 ){
           dec$L[[ 1 ]][[ 1 ]] = box_blur( dec$L[[ 1 ]][[ 1 ]], 1 )
