@@ -35,6 +35,6 @@ Apply shift and rescale to the distribution of pixel values
 \examples{
 im_moments(regatta) # before manipulation
 im_moments(im_distribute(regatta, "b", mean = 0, sd = 20)) # b channel is adjusted
-pplot(im_distribute(regatta, "b", mean = 0, sd = 20)) # see the effect
-pplot(im_distribute(regatta, c("a", "b"), c(-5, 0), c(15, 20))) # adjust two channels simultaneously
+plot(im_distribute(regatta, "b", mean = 0, sd = 20)) # see the effect
+plot(im_distribute(regatta, c("a", "b"), c(-5, 0), c(15, 20))) # adjust two channels simultaneously
 }

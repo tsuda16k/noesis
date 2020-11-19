@@ -18,5 +18,5 @@ an image
 Color dodge
 }
 \examples{
-pplot(color_dodge(regatta, regatta^10))
+plot(color_dodge(regatta, regatta^10))
 }

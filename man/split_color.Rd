@@ -10,7 +10,7 @@ split_color(im)
 \item{im}{an image}
 }
 \value{
-an list of images
+a list of images
 }
 \description{
 Split color channel

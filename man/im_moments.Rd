@@ -4,7 +4,14 @@
 \alias{im_moments}
 \title{Get moment statistics of an image}
 \usage{
-im_moments(im, channel = 1:3, order = 1:4, space = "CIELAB", max_size = 1024)
+im_moments(
+  im,
+  channel = 1:3,
+  order = 1:4,
+  space = "CIELAB",
+  max_size = 1024,
+  na.rm = FALSE
+)
 }
 \arguments{
 \item{im}{an image}
@@ -13,9 +20,11 @@ im_moments(im, channel = 1:3, order = 1:4, space = "CIELAB", max_size = 1024)
 
 \item{order}{order of the moment to be computed}
 
-\item{space}{color space, either "CIELAB" (default) or "RGB}
+\item{space}{color space, either "CIELAB" (default) or "RGB"}
 
 \item{max_size}{resize input image before calculation of moments}
+
+\item{na.rm}{logical. Should missing values be removed?}
 }
 \value{
 a data frame of moment values

@@ -18,7 +18,7 @@ an image
 Image cropping
 }
 \examples{
-pplot(im_crop(regatta, 100)) # crop all four sides with the same value
-pplot(im_crop(regatta, c(100, 50))) # vertical, horizontal
-pplot(im_crop(regatta, c(0, 50, 50, 200))) # top, right, bottom, left
+plot(im_crop(regatta, 100)) # crop all four sides with the same value
+plot(im_crop(regatta, c(100, 50))) # vertical, horizontal
+plot(im_crop(regatta, c(0, 50, 50, 200))) # top, right, bottom, left
 }

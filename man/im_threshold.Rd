@@ -22,5 +22,5 @@ an image
 Threshold grayscale image
 }
 \examples{
-pplot(im_threshold(get_R(regatta), thr = 0.6))
+plot(im_threshold(get_R(regatta), thr = 0.6))
 }

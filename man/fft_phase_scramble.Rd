@@ -16,5 +16,5 @@ an image
 fft phase scrambling
 }
 \examples{
-pplot(fft_phase_scramble(regatta))
+plot(fft_phase_scramble(regatta))
 }

@@ -19,8 +19,8 @@ Pad image with n pixels
 \examples{
 # zero padding
 im = im_pad(regatta, 20, "zero")
-pplot(im)
+plot(im)
 # mirror padding
 im = im_pad(regatta, 100, "mirror")
-pplot(im)
+plot(im)
 }

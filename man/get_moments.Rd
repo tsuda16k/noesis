@@ -4,12 +4,14 @@
 \alias{get_moments}
 \title{Get moment statistics of a vector/array}
 \usage{
-get_moments(x, order = 1:4)
+get_moments(x, order = 1:4, na.rm = FALSE)
 }
 \arguments{
 \item{x}{data}
 
 \item{order}{order of the moment to be computed}
+
+\item{na.rm}{logical. Should missing values be removed?}
 }
 \value{
 a numeric vector

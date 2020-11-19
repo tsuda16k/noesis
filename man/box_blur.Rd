@@ -18,5 +18,5 @@ an image
 Box blur
 }
 \examples{
-pplot(box_blur(regatta, 10))
+plot(box_blur(regatta, 10))
 }

@@ -19,7 +19,7 @@ Extract a color channel from an image
 }
 \examples{
 R = get_channel(regatta, 1)
-pplot(R)
+plot(R)
 G = get_channel(regatta, "G")
-pplot(G)
+plot(G)
 }

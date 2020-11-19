@@ -7,7 +7,7 @@
 CIELAB_visualize(im, scale = FALSE)
 }
 \arguments{
-\item{im}{an image}
+\item{im}{an RGB image}
 
 \item{scale}{either TRUE or FALSE (default)}
 }

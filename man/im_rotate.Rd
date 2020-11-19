@@ -36,7 +36,7 @@ an image
 Rotate an image
 }
 \examples{
-pplot(im_rotate(regatta, 30))
-pplot(im_rotate(regatta, 30, expand = TRUE))
-pplot(im_rotate(regatta, 30, expand = TRUE, pad = "repeat"))
+plot(im_rotate(regatta, 30))
+plot(im_rotate(regatta, 30, expand = TRUE))
+plot(im_rotate(regatta, 30, expand = TRUE, pad = "repeat"))
 }

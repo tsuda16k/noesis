@@ -18,7 +18,7 @@ an image
 Make an image square shaped
 }
 \examples{
-pplot(im_crop_square(regatta))
-pplot(im_crop_square(regatta, position = 0))
-pplot(im_crop_square(regatta, position = 0.8))
+plot(im_crop_square(regatta))
+plot(im_crop_square(regatta, position = 0))
+plot(im_crop_square(regatta, position = 0.8))
 }

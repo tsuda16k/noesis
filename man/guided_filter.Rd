@@ -22,5 +22,5 @@ an image
 Apply the guided filter
 }
 \examples{
-pplot(guided_filter(regatta,8))
+plot(guided_filter(regatta,8))
 }

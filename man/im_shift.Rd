@@ -22,5 +22,5 @@ Image shift operation
 \examples{
 # shift a image 100 pixels to the right
 im = im_shift(regatta, axis = "x", lag = 100)
-pplot(im)
+plot(im)
 }

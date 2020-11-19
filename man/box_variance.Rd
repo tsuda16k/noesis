@@ -18,5 +18,5 @@ an image
 Box variance
 }
 \examples{
-pplot(box_variance(regatta, 3), rescale = TRUE)
+plot(box_variance(regatta, 3), rescale = TRUE)
 }

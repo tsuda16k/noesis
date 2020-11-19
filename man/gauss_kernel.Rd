@@ -18,6 +18,6 @@ an image
 Create a Gaussian kernel
 }
 \examples{
-pplot(gauss_kernel(10), rescale = TRUE)
-pplot(gauss_kernel(sd = 10, radius = 20), rescale = TRUE)
+plot(gauss_kernel(10), rescale = TRUE)
+plot(gauss_kernel(sd = 10, radius = 20), rescale = TRUE)
 }

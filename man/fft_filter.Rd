@@ -26,11 +26,11 @@ an image
 Apply fft filter
 }
 \examples{
-pplot(fft_filter(regatta, "lowpass", "ideal", 10)) # ideal lowpass filterig
-pplot(fft_filter(regatta, "lowpass", "gauss", 10)) # gaussian lowpass filterig
+plot(fft_filter(regatta, "lowpass", "ideal", 10)) # ideal lowpass filterig
+plot(fft_filter(regatta, "lowpass", "gauss", 10)) # gaussian lowpass filterig
 # 5th-order butterworth lowpass filtering
-pplot(fft_filter(regatta, "lowpass", "butterworth", 10, order = 5))
+plot(fft_filter(regatta, "lowpass", "butterworth", 10, order = 5))
 im = im_gray(regatta)
-pplot(fft_filter(im, "highpass", "gauss", 60), rescale = TRUE) # gaussian highpass filterig
-pplot(fft_filter(im, "bandpass", "gauss", 10, 20), rescale = TRUE) # gaussian bandpass filterig
+plot(fft_filter(im, "highpass", "gauss", 60), rescale = TRUE) # gaussian highpass filterig
+plot(fft_filter(im, "bandpass", "gauss", 10, 20), rescale = TRUE) # gaussian bandpass filterig
 }

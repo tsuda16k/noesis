@@ -22,6 +22,6 @@ a list of images
 Apply V1 filters to an image
 }
 \examples{
-im = filter_v1(im_gray(regatta), 1:2)
-pplot(im[[1]], rescale = TRUE)
+im = filter_v1(im_gray(regatta), id = 1:2, n_orientation = 4, cell_type = "complex")
+plot(im[[1]], rescale = TRUE)
 }

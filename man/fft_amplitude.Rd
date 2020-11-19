@@ -21,5 +21,5 @@ Calculate fft amplitude
 }
 \examples{
 amp = fft_amplitude(im_gray(regatta), modify = TRUE)
-pplot(amp)
+plot(amp)
 }

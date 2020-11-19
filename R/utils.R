@@ -1,6 +1,7 @@
 
+# setwd( "/Users/tsuhir/Dropbox/code/R/_packagedev/noesis/" )
 
-#' @importFrom stats runif
+#' @importFrom stats runif median
 #' @importFrom stringr str_match str_split str_sub
 #' @importFrom graphics plot
 #' @importFrom magrittr mod "%>%"
@@ -9,6 +10,81 @@ NULL
 
 # CRAN sometimes issues spurious warnings about undefined variables
 utils::globalVariables( c( ".", "%>%", "x", "y", "c", "value" ) )
+
+
+if( FALSE ){
+  dir = "/Users/tsuhir/Dropbox/code/material/img/_pexels/"
+
+  imname = "photo-of-sailing-boat-1586795.jpg"
+  im = im_load( paste0( dir, imname ) )
+  im_save( im, imname, , "notes/_sketch" )
+  sketcher::sketch( im, style = 2, lineweight = 1, shadow = 0.3, max.size = 1500 ) %>%
+    plot %>%
+    im_save( paste0( imname, "_s" ), "notes/_sketch" )
+
+  im = im_load( paste0( dir, imname ) ) %>% im_resize_limit( 900 ) %>% im_gray()
+  im2 = edge_prewitt( im )
+  plot( 1 - im2$magnitude )
+  im_save( 1 - im2$magnitude, "edge_prewitt", getwd() )
+
+  im2 = edge_canny( im )
+  im_save( 1 - edge_canny( im, alpha = 0.5 ), "edge_canny", getwd() )
+  sketcher::sketch( im, style = 2, lineweight = 0.5, shadow = 0 ) %>%
+    plot %>%
+    im_save( "edge_ours", "notes/_sketch" )
+  edge_DOG( im, 1 ) %>% rescaling01 %>% im_save("edge_DOG", getwd())
+  fft_filter( im, "highpass", "gauss", 40 ) %>% rescaling01 %>%
+    im_save( "edge_highpass", getwd() )
+
+  # sketch(img, style = 2)
+
+  im2 = sketcher::sketch( im, style = 2, lineweight = 0.5, shadow = 0.55, max.size = 1800 )
+  im_save( im2, paste0( imname, "_s" ), "notes/_sketch" )
+
+  plot( im2 )
+
+  names = c( "cake", "container", "flower2", "tokyo_st", "face" )[ 1:5 ]
+  for( i in 1:length( names ) ){
+    imsize = 600
+    im0 = im_load( paste0( "/Users/tsuhir/Dropbox/code/material/img/_square/", names[ i ], ".jpg" ) ) %>%
+      im_resize_limit( imsize )
+    im = im_gray( im0 )
+    im2 = list(
+      1 - edge_canny( im, alpha = .3, sigma = 1, smoothing = 2 ), # canny
+      # 1 - edge_sobel( im )$magnitude %>% rescaling01 %>% pow( 1.5 ), # sobel
+      sketch( im, style = 1, lineweight = 0.5, shadow = 0, gain = 0.1 )^3, # edge
+      sketch( im, style = 2, lineweight = 1.5, shadow = 0. , gain = 0.1 ), # edge + shading
+      sketch( im, style = 2, lineweight = 1.5, shadow = 0.5 ) # edge + shading + shadow
+    )
+    if( i == 1 ){
+      im3 = im0
+    } else {
+      im3 = im_combine( im3, im0, y = ( i - 1 ) * imsize, x = 0 )
+    }
+    for( j in 1:length( im2 ) ){
+      im3 = im_combine( im3, im2[[ j ]], y = ( i - 1 ) * imsize, x = j * imsize )
+    }
+  }
+  # plot( im3 )
+  im_save( im3, "line_draw_0.5_1.5_1.5", getwd() )
+
+  im = im_load( "/Users/tsuhir/Dropbox/code/material/img/cafe2.jpg" ) %>%
+    im_gray %>%
+    im_resize_limit( 600 )
+  sketch( im, style = 1, lineweight = 0.5, shadow = 0, gain = 0.1 ) %>% plot # edge
+  sketch( im, style = 1, lineweight = 0.5, shadow = 0.5 ) %>% plot # edge + shadow
+  sketch( im, style = 2, lineweight = 0.5, shadow = 0. , gain = 0.1 ) %>% plot # edge + shading
+  sketch( im, style = 2, lineweight = 0.5, shadow = 0.5 ) %>% plot # edge + shading + shadow
+
+  plot( 1 - edge_canny( im, alpha = .4, sigma = 1, smoothing = 2 ) )
+  plot( 1 - edge_sobel( im )$magnitude %>% rescaling01 %>% pow( 1.5 ) )
+  # plot( 1 - ( edge_maxmin( im, radius = 1 ) %>% rescaling01 )^1.2 )
+  # ( 1 - edge_DOG( im, sigma = 0.5, k = 1.6 ) %>% abs %>% rescaling01 ) %>% plot
+  # edge_XDOG( im, sigma = 0.5, k = 1.6, p = 10 ) %>% ramp_threshold( 0.5, 6 ) %>% plot
+
+  # v1 = filter_v1( im, id = c( 1 ), n_orientation = 1, cell_type = "complex" )
+  # plot( v1[[1]], rescale = TRUE )
+}
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -89,7 +165,8 @@ plot.nimg = function( x, rescale = FALSE, ... ){
   if( rescale ){
     im = rescaling01( im )
   } else if( max( im ) > 1 || min( im ) < 0 ){
-    warning( "Pixcel value exceeds the range [0,1], and hence it was clamped when plotting.")
+    warning( paste0( "Pixcel value exceeds the range [0,1], and hence it was clamped when plotting.\n",
+                     "min = ", min( im ), ", max = ", max( im ) ) )
     im = clamping( im )
   }
   graphics::par( mar = c( 0, 0, 0, 0 ) )
@@ -138,7 +215,7 @@ pplot = function( im, rescale = FALSE ){
 #' \dontrun{
 #' # load an image from disk
 #' im = im_load("path/to/your/image.jpg")
-#' pplot(im)
+#' plot(im)
 #' # load an image from URL
 #' im = im_load("http://placehold.jp/150x150.png")
 #' }
@@ -323,6 +400,27 @@ nimg2cimg = function( im ){
       return( imager::as.cimg( im2 ) )
     }
   }
+}
+
+
+resetPar = function() {
+  p = list(
+    xlog = FALSE, ylog = FALSE, adj = 0.5, ann = TRUE, ask = FALSE, bg = "white", bty = "o",
+    cex = 1, cex.axis = 1, cex.lab = 1, cex.main = 1.2, cex.sub = 1,
+    col = "black", col.axis = "black", col.lab = "black", col.main = "black", col.sub = "black",
+    crt = 0, err = 0, family = "", fg = "black", fig = c(0, 1, 0, 1), fin = c(6.239583, 5.6875),
+    font = 1, font.axis = 1, font.lab = 1, font.main = 2, font.sub = 1,
+    lab = c(5, 5, 7), las = 0, lend = "round", lheight = 1, ljoin = "round", lmitre = 10,
+    lty = "solid", lwd = 1,
+    mai = c(1.02, 0.82, 0.82, 0.42), mar = c(5.1, 4.1, 4.1, 2.1), mex = 1,
+    mfcol = c(1, 1), mfg = rep(1, 4), mfrow = c(1, 1), mgp = c(3, 1, 0), mkh = 0.001,
+    new = FALSE, oma = c(0, 0, 0, 0), omd = c(0, 1, 0, 1), omi = rep(0, 4),
+    pch = 1, pin = c(4.999583, 3.8475), plt = c(0.131419, 0.9326878, 0.1793407, 0.8558242),
+    ps = 12, pty = "m", smo = 1, srt = 0, tck = NA, tcl = -0.5, usr = c(0, 1, 0, 1),
+    xaxp = c(0, 1, 5), xaxs = "r", xaxt = "s", xpd = FALSE,
+    yaxp = c(0, 1, 5), yaxs = "r", yaxt = "s", ylbias = 0.2
+  )
+  graphics::par( p )
 }
 
 
@@ -749,6 +847,64 @@ MinMax = MaxMin = function( x ){
 }
 
 
+ramp_threshold = function( x, eta, phi ){
+  y = x
+  y[ x >= eta ] = 1
+  y[ x < eta ] = 1 + tanh( phi * ( y[ x < eta ] - eta ) )
+  return( y )
+}
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# geometry ----
+
+find_circle = function( x1, y1, x2, y2, x3, y3 ){
+  # https://www.geeksforgeeks.org/equation-of-circle-when-three-points-on-the-circle-are-given/
+  x12 = x1 - x2
+  x13 = x1 - x3
+  y12 = y1 - y2
+  y13 = y1 - y3
+  y31 = y3 - y1
+  y21 = y2 - y1
+  x31 = x3 - x1
+  x21 = x2 - x1
+
+  sx13 = x1^2 - x3^2
+  sy13 = y1^2 - y3^2
+  sx21 = x2^2 - x1^2
+  sy21 = y2^2 - y1^2
+
+  f = ( sx13 * x12 + sy13 * x12 + sx21 * x13 + sy21 * x13 ) / ( 2 * ( y31 * x12 - y21 * x13 ) )
+  g = ( sx13 * y12 + sy13 * y12 + sx21 * y13 + sy21 * y13 ) / ( 2 * ( x31 * y12 - x21 * y13 ) )
+  c = -x1^2 - y1^2 - 2 * g * x1 - 2 * f * y1
+
+  h = -g
+  k = -f
+  r = sqrt( h * h + k * k - c )
+
+  return( c( x = h, y = k, r = r ) )
+}
+
+
+#' Check if a point is inside or outside an ellipse
+#' @param x x coordinate of the point
+#' @param y y coordinate of the point
+#' @param h x coordinate of the ellipse center
+#' @param k y coordinate of the ellipse center
+#' @param a semi-major axis x
+#' @param b semi-major axis y
+#' @return mean squared error
+#' @examples
+#' is_inside_ellipse(x = 0, y = 0, h = 0, k = 0, a = 4, b = 2) #TRUE
+#' is_inside_ellipse(x = 5, y = 0, h = 0, k = 0, a = 4, b = 2) #FALSE
+#' @export
+is_inside_ellipse = function( x, y, h, k, a, b ){
+  # https://www.geeksforgeeks.org/check-if-a-point-is-inside-outside-or-on-the-ellipse/
+  p = ( (x - h)^2 / a^2 ) + ( (y - k)^2 / b^2 )
+  return( p <= 1 )
+}
+
+
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # stats ----
 
@@ -774,24 +930,25 @@ im_diff = function( im1, im2 ){
 #' Get moment statistics of a vector/array
 #' @param x data
 #' @param order order of the moment to be computed
+#' @param na.rm logical. Should missing values be removed?
 #' @return a numeric vector
 #' @examples
 #' get_moments( rnorm( 20 ) ) # get the 1st to 4th order moments
 #' get_moments( rnorm( 20 ), order = 3 ) # get only the 3rd order moment (skewness)
 #' get_moments( rnorm( 20 ), order = c( 3, 1 ) ) # get skewness and mean
 #' @export
-get_moments = function( x, order = 1:4 ){
+get_moments = function( x, order = 1:4, na.rm = FALSE ){
   m = rep( 0.0, times = length( order ) )
   names( m ) = c( "mean", "sd", "skewness", "kurtosis" )[ order ]
   for( i in 1:length( order ) ){
     if( order[ i ] == 1 ){
-      m[ i ] = base::mean( x )
+      m[ i ] = base::mean( x, na.rm = na.rm )
     } else if( order[ i ] == 2 ){
-      m[ i ] = stats::sd( x )
+      m[ i ] = stats::sd( x, na.rm = na.rm )
     } else if( order[ i ] == 3 ){
-      m[ i ] = moments::skewness( x )
+      m[ i ] = moments::skewness( x, na.rm = na.rm )
     } else if( order[ i ] == 4 ){
-      m[ i ] = moments::kurtosis( x )
+      m[ i ] = moments::kurtosis( x, na.rm = na.rm )
     }
   }
   return( m )
@@ -802,8 +959,9 @@ get_moments = function( x, order = 1:4 ){
 #' @param im an image
 #' @param channel color channel
 #' @param order order of the moment to be computed
-#' @param space color space, either "CIELAB" (default) or "RGB
+#' @param space color space, either "CIELAB" (default) or "RGB"
 #' @param max_size resize input image before calculation of moments
+#' @param na.rm logical. Should missing values be removed?
 #' @return a data frame of moment values
 #' @examples
 #' im_moments(regatta) # moments in CIELAB color space
@@ -814,7 +972,7 @@ get_moments = function( x, order = 1:4 ){
 #' im_moments(regatta, channel = 2:3, order = c(2, 3)) # sd and skew in a and b channels
 #' im_moments(regatta, channel = c("a", "b"), order = c(2, 3)) # same as above
 #' @export
-im_moments = function( im, channel = 1:3, order = 1:4, space = "CIELAB", max_size = 1024 ){
+im_moments = function( im, channel = 1:3, order = 1:4, space = "CIELAB", max_size = 1024, na.rm = FALSE ){
   if( im_nc( im ) == 1 ){
     channel = 1
   }
@@ -830,7 +988,7 @@ im_moments = function( im, channel = 1:3, order = 1:4, space = "CIELAB", max_siz
   }
   channel = force_channel_label_to_num( channel )
   for( i in 1:length( channel ) ){
-    mmt = get_moments( get_channel( im, channel[ i ] ), order )
+    mmt = get_moments( get_channel( im, channel[ i ] ), order, na.rm = na.rm )
     df = rbind( df, data.frame(
       channel = clabel[ channel[ i ] ], moment = names( mmt ), value = unname( mmt ) ) )
   }
@@ -849,8 +1007,8 @@ im_moments = function( im, channel = 1:3, order = 1:4, space = "CIELAB", max_siz
 #' @examples
 #' im_moments(regatta) # before manipulation
 #' im_moments(im_distribute(regatta, "b", mean = 0, sd = 20)) # b channel is adjusted
-#' pplot(im_distribute(regatta, "b", mean = 0, sd = 20)) # see the effect
-#' pplot(im_distribute(regatta, c("a", "b"), c(-5, 0), c(15, 20))) # adjust two channels simultaneously
+#' plot(im_distribute(regatta, "b", mean = 0, sd = 20)) # see the effect
+#' plot(im_distribute(regatta, c("a", "b"), c(-5, 0), c(15, 20))) # adjust two channels simultaneously
 #' @export
 im_distribute = function( im, channel, mean = NULL, sd = NULL, space = "CIELAB", clamp = TRUE ){
   channel = force_channel_label_to_num( channel )
@@ -1005,9 +1163,9 @@ force_channel_label_to_num = function( x ){
 #' @return an image
 #' @examples
 #' R = get_channel(regatta, 1)
-#' pplot(R)
+#' plot(R)
 #' G = get_channel(regatta, "G")
-#' pplot(G)
+#' plot(G)
 #' @export
 get_channel = function( im, channel ){
   if( length( dim( im ) ) == 2 ){
@@ -1056,7 +1214,7 @@ get_A = function( im ){
 
 #' Split color channel
 #' @param im an image
-#' @return an list of images
+#' @return a list of images
 #' @examples
 #' split_color(regatta) # a list of R, G, and B color channels
 #' @export
@@ -1126,10 +1284,10 @@ im_tricolored = function( im ){
 #' @examples
 #' # zero padding
 #' im = im_pad(regatta, 20, "zero")
-#' pplot(im)
+#' plot(im)
 #' # mirror padding
 #' im = im_pad(regatta, 100, "mirror")
-#' pplot(im)
+#' plot(im)
 #' @export
 im_pad = function( im, n, method = "mirror" ){
   if( n == 0 ) return( im )
@@ -1201,7 +1359,7 @@ im_pad = function( im, n, method = "mirror" ){
 #' @examples
 #' # shift a image 100 pixels to the right
 #' im = im_shift(regatta, axis = "x", lag = 100)
-#' pplot(im)
+#' plot(im)
 #' @export
 im_shift = function( im, axis = "x", lag = 0 ){
   if( axis == "x" ){
@@ -1220,9 +1378,9 @@ im_shift = function( im, axis = "x", lag = 0 ){
 #' @param margin a numeric vector.
 #' @return an image
 #' @examples
-#' pplot(im_crop(regatta, 100)) # crop all four sides with the same value
-#' pplot(im_crop(regatta, c(100, 50))) # vertical, horizontal
-#' pplot(im_crop(regatta, c(0, 50, 50, 200))) # top, right, bottom, left
+#' plot(im_crop(regatta, 100)) # crop all four sides with the same value
+#' plot(im_crop(regatta, c(100, 50))) # vertical, horizontal
+#' plot(im_crop(regatta, c(0, 50, 50, 200))) # top, right, bottom, left
 #' @export
 im_crop = function( im, margin ){
   if( length( margin ) == 1 ){
@@ -1243,14 +1401,30 @@ im_crop = function( im, margin ){
 }
 
 
+#' Image cropping
+#' @param im an image
+#' @param y1 y coordinate of top-left corner
+#' @param x1 x coordinate of top-left corner
+#' @param y2 y coordinate of bottom-right corner
+#' @param x2 x coordinate of bottom-right corner
+#' @return an image
+#' @examples
+#' plot(im_get(regatta, 1, 1, 100, 100))
+#' @export
+im_get = function( im, y1, x1, y2, x2 ){
+  im = im[ y1:y2, x1:x2, , drop = FALSE ]
+  return( nimg( im ) )
+}
+
+
 #' Make an image square shaped
 #' @param im an image
 #' @param position square center. a numeric value between 0 and 1.
 #' @return an image
 #' @examples
-#' pplot(im_crop_square(regatta))
-#' pplot(im_crop_square(regatta, position = 0))
-#' pplot(im_crop_square(regatta, position = 0.8))
+#' plot(im_crop_square(regatta))
+#' plot(im_crop_square(regatta, position = 0))
+#' plot(im_crop_square(regatta, position = 0.8))
 #' @export
 im_crop_square = function( im, position = 0.5 ){
   position = clamping( position )
@@ -1281,11 +1455,11 @@ im_crop_square = function( im, position = 0.5 ){
 #' @param pad Type of padding. Either "zero", "neumann", or "repeat".
 #' @return an image
 #' @examples
-#' pplot(im_rotate(regatta, 30))
-#' pplot(im_rotate(regatta, 30, expand = TRUE))
-#' pplot(im_rotate(regatta, 30, expand = TRUE, pad = "repeat"))
+#' plot(im_rotate(regatta, 30))
+#' plot(im_rotate(regatta, 30, expand = TRUE))
+#' plot(im_rotate(regatta, 30, expand = TRUE, pad = "repeat"))
 #' @export
-im_rotate = function( im, angle, expand = FALSE, cx = NULL, cy = NULL, interpolation = 2, pad = "zero" ){
+im_rotate = function(im, angle, expand = FALSE, cx = NULL, cy = NULL, interpolation = 2, pad = "zero"){
   cimg = nimg2cimg( im )
   boundary = 0
   if( pad == "neumann" ){
@@ -1356,6 +1530,18 @@ im_resize_limit = function( im, bound, interpolation = 1 ){
 }
 
 
+im_resize_limit_min = function( im, bound, interpolation = 1 ){
+  if( min( im_size( im ) ) < bound ){
+    return( im )
+  }
+  if( im_width( im ) > im_height( im ) ){
+    im_resize( im, height = bound, interpolation = interpolation )
+  } else {
+    im_resize( im, width = bound, interpolation = interpolation )
+  }
+}
+
+
 #' Resize image by a scale factor
 #' @param im an image
 #' @param scale a scale factor
@@ -1381,10 +1567,10 @@ im_resize_scale = function( im, scale = 1, interpolation = 1 ){
 #' @param background background color
 #' @return an image
 #' @examples
-#' pplot(im_combine(regatta, regatta, y = im_height(regatta)))
-#' pplot(im_combine(regatta, regatta, y = 100, x = 200))
-#' pplot(im_combine(regatta, regatta, y = 100, x = 200, background = 0.5))
-#' pplot(im_combine(regatta, regatta, y = 100, x = 200, background = c(1, 0.5, 0.5)))
+#' plot(im_combine(regatta, regatta, y = im_height(regatta)))
+#' plot(im_combine(regatta, regatta, y = 100, x = 200))
+#' plot(im_combine(regatta, regatta, y = 100, x = 200, background = 0.5))
+#' plot(im_combine(regatta, regatta, y = 100, x = 200, background = c(1, 0.5, 0.5)))
 #' @export
 im_combine = function( im1, im2, y = 0, x = 0, alpha = FALSE, background = 1 ){
   cc = max( im_nc( im1 ), im_nc( im2 ) )
@@ -1416,10 +1602,22 @@ im_combine = function( im1, im2, y = 0, x = 0, alpha = FALSE, background = 1 ){
 #' @param adjust adjust the automatic threshold
 #' @return an image
 #' @examples
-#' pplot(im_threshold(get_R(regatta), thr = 0.6))
+#' plot(im_threshold(get_R(regatta), thr = 0.6))
 #' @export
 im_threshold = function( im, thr = "auto", approx = TRUE, adjust = 1 ){
   cimg2nimg( imager::threshold( nimg2cimg( im ), thr, approx, adjust ) )
+}
+
+
+#' Raise pixel values
+#' @param im an image
+#' @param intercept a numeric value between 0 and 1
+#' @return an image
+#' @examples
+#' plot(im_raise(regatta, 0.3))
+#' @export
+im_raise = function( im, intercept ){
+  intercept + ( 1 - intercept ) * im
 }
 
 
@@ -1432,7 +1630,7 @@ im_threshold = function( im, thr = "auto", approx = TRUE, adjust = 1 ){
 #' @param tricolored if TRUE, returned image has three color channels
 #' @return an image
 #' @examples
-#' pplot(im_gray(regatta))
+#' plot(im_gray(regatta))
 #' @export
 im_gray = function( im, tricolored = FALSE ){
   if( im_nc( im ) < 2 ){
@@ -1454,7 +1652,7 @@ im_gray = function( im, tricolored = FALSE ){
 #' @param scale if TRUE (default), L value is divided by 100
 #' @return an image
 #' @examples
-#' pplot(get_L(regatta))
+#' plot(get_L(regatta))
 #' @export
 get_L = function( im, scale = TRUE ){
   if( im_nc( im ) == 1 ){
@@ -1474,12 +1672,147 @@ get_L = function( im, scale = TRUE ){
 # spatial filtering ----
 
 
+#' Edge detection by finite differences
+#' @param im an image
+#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
+#' @return a list containing images
+#' @examples
+#' edge = edge_diff(im_gray(regatta))
+#' plot(edge$magnitude)
+#' @export
+edge_diff = function( im, pad.method = "mirror" ){
+  fx = matrix( c( -1, 0, 1 ), ncol = 3 ) %>% nimg
+  fy = matrix( c( -1, 0, 1 ), ncol = 1 ) %>% nimg
+  gx = im_conv( im, fx, pad.method )
+  gy = im_conv( im, fy, pad.method )
+  magnitude = sqrt( gx^2 + gy^2 )
+  theta = atan2( gy, gx )
+  return( list( magnitude = magnitude, theta = theta, gx = gx, gy = gy ) )
+}
+
+
+#' Sobel edge detection
+#' @param im an image
+#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
+#' @return a list containing images
+#' @examples
+#' edge = edge_sobel(im_gray(regatta))
+#' plot(edge$magnitude)
+#' plot(1 - edge$magnitude, rescale = TRUE)
+#' @export
+edge_sobel = function( im, pad.method = "mirror" ){
+  fx = matrix( c( 1, 2, 1, 0, 0, 0, -1, -2, -1 ) / 4, ncol = 3 ) %>% nimg
+  fy = t( fx[,,] ) %>% nimg
+  gx = im_conv( im, fx, pad.method )
+  gy = im_conv( im, fy, pad.method )
+  magnitude = sqrt( gx^2 + gy^2 )
+  theta = atan2( gy, gx )
+  return( list( magnitude = magnitude, theta = theta, gx = gx, gy = gy ) )
+}
+
+
+#' Prewitt edge detection
+#' @param im an image
+#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
+#' @return a list containing images
+#' @examples
+#' edge = edge_prewitt(im_gray(regatta))
+#' plot(edge$magnitude)
+#' plot(1 - edge$magnitude, rescale = TRUE)
+#' @export
+edge_prewitt = function( im, pad.method = "mirror" ){
+  fx = matrix( c( 1, 1, 1, 0, 0, 0, -1, -1, -1 ) / 3, ncol = 3 ) %>% nimg
+  fy = t( fx[,,] ) %>% nimg
+  gx = im_conv( im, fx, pad.method )
+  gy = im_conv( im, fy, pad.method )
+  magnitude = sqrt( gx^2 + gy^2 )
+  theta = atan2( gy, gx )
+  return( list( magnitude = magnitude, theta = theta, gx = gx, gy = gy ) )
+}
+
+
+#' Edge detection by variance method
+#' @param im an image
+#' @param radius kernel radius
+#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
+#' @return an image
+#' @examples
+#' edge = edge_variance(im_gray(regatta), radius = 1)
+#' plot(edge, rescale = TRUE)
+#' @export
+edge_variance = function( im, radius, pad.method = "mirror" ){
+  stat_filter( im, radius, stats::var, pad.method )
+}
+
+
+#' Edge detection by Max-Min method
+#' @param im an image
+#' @param radius kernel radius
+#' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
+#' @return an image
+#' @examples
+#' edge = edge_maxmin(im_gray(regatta), radius = 1)
+#' plot(edge, rescale = TRUE)
+#' @export
+edge_maxmin = function( im, radius, pad.method = "mirror" ){
+  stat_filter( im, radius, MaxMin, pad.method )
+}
+
+
+#' Apply the Canny edge detection
+#'
+#' This is the wrapper of the cannyEdges() function in the imager package.
+#' t1 and t2 determines the edge threshold.
+#' if the threshold parameters are missing, they are determined automatically using a k-means heuristic.
+#' alpha parameter adjusts the automatic thresholds up or down.
+#' The edge detection is based on a smoothed image gradient (set by the sigma parameter).
+#' If smoothing parameter is set, high frequency noise is removed before applying the Canny edge detection.
+#'
+#' @param im an image.
+#' @param t1 threshold for weak edges (if missing, both thresholds are determined automatically).
+#' @param t2 threshold for strong edges.
+#' @param alpha threshold adjustment factor (default 1).
+#' @param sigma degree of smoothing image gradient.
+#' @param smoothing numeric (integer). Smoothness of image texture.
+#' @return an array of the edge image.
+#' @examples
+#' im = edge_canny(regatta)
+#' plot(im)
+#' @export
+edge_canny = function( im, t1, t2, alpha = 1, sigma = 2, smoothing = 0 ){
+  im = im_gray( im )
+  N = floor( log2( min( im_size( im ) ) ) )
+  if( smoothing > N ){
+    warning( paste0( "smoothing exceeded the maximum possible value for this image. smoothing = ",
+                     N, " was used instead.") )
+    smoothing = N
+  }
+  if( smoothing >= 1 ){
+    # im = gf_get_residual( im, smoothing )
+  }
+  im2 = imager::cannyEdges( nimg2cimg( im ), t1, t2, alpha, sigma )
+  im2 = cimg2nimg( im2 )
+  return( im2 )
+}
+
+
+edge_DOG = function( im, sigma, k = 1.6 ){
+  im_conv( im, gauss_kernel( sigma ) ) - im_conv( im, gauss_kernel( k * sigma ) )
+}
+
+
+# XDOG(im_gray(face), 0.5) %>% ramp_threshold( 0.5, 6 ) %>% plot()
+edge_XDOG = function( im, sigma, k = 1.6, p = 20 ){
+  ( 1 + p ) * im_conv( im, gauss_kernel(sigma) ) - p * im_conv( im, gauss_kernel(k * sigma) )
+}
+
+
 #' Box blur
 #' @param im an image
 #' @param radius radius
 #' @return an image
 #' @examples
-#' pplot(box_blur(regatta, 10))
+#' plot(box_blur(regatta, 10))
 #' @export
 box_blur = function( im, radius ){
   if( radius < 1 ){
@@ -1525,7 +1858,7 @@ box_blur = function( im, radius ){
 #' @param radius radius
 #' @return an image
 #' @examples
-#' pplot(box_variance(regatta, 3), rescale = TRUE)
+#' plot(box_variance(regatta, 3), rescale = TRUE)
 #' @export
 box_variance = function( im, radius ){
   box_blur( im^2, radius ) - box_blur( im, radius )^2
@@ -1537,8 +1870,8 @@ box_variance = function( im, radius ){
 #' @param radius kernel radius. kernel diameter is 2 * radius + 1.
 #' @return an image
 #' @examples
-#' pplot(gauss_kernel(10), rescale = TRUE)
-#' pplot(gauss_kernel(sd = 10, radius = 20), rescale = TRUE)
+#' plot(gauss_kernel(10), rescale = TRUE)
+#' plot(gauss_kernel(sd = 10, radius = 20), rescale = TRUE)
 #' @export
 gauss_kernel = function( sd, radius = round( 2.5 * sd ) ){
   if( sd < 0.2 ){
@@ -1565,9 +1898,9 @@ gauss_kernel = function( sd, radius = round( 2.5 * sd ) ){
 #' @param mask if TRUE, circular mask is applied.
 #' @examples
 #' gb = gabor_kernel( ksize = 61 )
-#' pplot(gb, rescale = TRUE)
+#' plot(gb, rescale = TRUE)
 #' gb = gabor_kernel( ksize = 61, theta = pi/6 )
-#' pplot(gb, rescale = TRUE)
+#' plot(gb, rescale = TRUE)
 #' @export
 gabor_kernel = function( ksize = sigma * 6, sigma = min( ksize ) / 6, lambd = min( ksize ) / 4,
                          theta = 0, psi = 0, gamma = 1, normalize = TRUE, mask = FALSE ){
@@ -1627,7 +1960,7 @@ gabor_kernel = function( ksize = sigma * 6, sigma = min( ksize ) / 6, lambd = mi
 #' @param I guide image
 #' @return an image
 #' @examples
-#' pplot(guided_filter(regatta,8))
+#' plot(guided_filter(regatta,8))
 #' @export
 guided_filter = function( p, radius, epsilon = 0.1, I = p ){
   if( radius < 1 ){
@@ -1657,7 +1990,7 @@ guided_filter = function( p, radius, epsilon = 0.1, I = p ){
 #' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
 #' @return an image
 #' @examples
-#' pplot(stat_filter(regatta, 1, min))
+#' plot(stat_filter(regatta, 1, min))
 #' @export
 stat_filter = function( im, radius, FUN, pad.method = "mirror" ){
   if( radius < 1 ){
@@ -1706,7 +2039,7 @@ stat_filter = function( im, radius, FUN, pad.method = "mirror" ){
 #' @param pad.method either "zero", "mean", "repeat", "mirror", or a numeric value
 #' @return an image
 #' @examples
-#' pplot(im_conv(regatta, gauss_kernel(sd = 2)))
+#' plot(im_conv(regatta, gauss_kernel(sd = 2)))
 #' @export
 im_conv = function( im, kernel, pad.method = "mirror" ){
   if( is.null( kernel ) ){
@@ -1789,8 +2122,8 @@ v1_kernels = function( id, n_orientation = 4, cell_type = "complex" ){
 #' @param cell_type either "simple" or "complex" (default) cell
 #' @return a list of images
 #' @examples
-#' im = filter_v1(im_gray(regatta), 1:2)
-#' pplot(im[[1]], rescale = TRUE)
+#' im = filter_v1(im_gray(regatta), id = 1:2, n_orientation = 4, cell_type = "complex")
+#' plot(im[[1]], rescale = TRUE)
 #' @export
 filter_v1 = function( im, id, n_orientation = 4, cell_type = "complex" ){
   output = list()
@@ -1851,9 +2184,9 @@ filter_v1 = function( im, id, n_orientation = 4, cell_type = "complex" ){
 #     tl.col = "black", tl.srt = 90 # Text label color and rotation
 #   )
 #
-#   # getLocalEnergy( boats, c( 9, 9 ), lambd = 3.6, sigma = 3.6 ) %>% pplot
+#   # getLocalEnergy( boats, c( 9, 9 ), lambd = 3.6, sigma = 3.6 ) %>% plot
 #
-#   # getLocalEnergy( boats2, c( 31, 31 ), lambd = 18.2, sigma = 14.6 ) %>% pplot
+#   # getLocalEnergy( boats2, c( 31, 31 ), lambd = 18.2, sigma = 14.6 ) %>% plot
 # }
 
 
@@ -1936,13 +2269,13 @@ fft_lowpass_kernel = function( kernel, height, width, cutoff, order = 4 ){
 #' @param order order of butterworth filter
 #' @return an image
 #' @examples
-#' pplot(fft_filter(regatta, "lowpass", "ideal", 10)) # ideal lowpass filterig
-#' pplot(fft_filter(regatta, "lowpass", "gauss", 10)) # gaussian lowpass filterig
+#' plot(fft_filter(regatta, "lowpass", "ideal", 10)) # ideal lowpass filterig
+#' plot(fft_filter(regatta, "lowpass", "gauss", 10)) # gaussian lowpass filterig
 #' # 5th-order butterworth lowpass filtering
-#' pplot(fft_filter(regatta, "lowpass", "butterworth", 10, order = 5))
+#' plot(fft_filter(regatta, "lowpass", "butterworth", 10, order = 5))
 #' im = im_gray(regatta)
-#' pplot(fft_filter(im, "highpass", "gauss", 60), rescale = TRUE) # gaussian highpass filterig
-#' pplot(fft_filter(im, "bandpass", "gauss", 10, 20), rescale = TRUE) # gaussian bandpass filterig
+#' plot(fft_filter(im, "highpass", "gauss", 60), rescale = TRUE) # gaussian highpass filterig
+#' plot(fft_filter(im, "bandpass", "gauss", 10, 20), rescale = TRUE) # gaussian bandpass filterig
 #' @export
 fft_filter = function( im, xpass, kernel = "ideal", cutoff, cutoff2, order = 4 ){
   if( xpass == "lowpass" ){
@@ -1952,9 +2285,11 @@ fft_filter = function( im, xpass, kernel = "ideal", cutoff, cutoff2, order = 4 )
     fft_mask = 1 - fft_lowpass_kernel( kernel, im_height( im ), im_width( im ), cutoff, order ) %>%
       im_rep( im_nc( im ) )
   } else if( xpass == "bandpass" ){
-    low = fft_lowpass_kernel( kernel, im_height( im ), im_width( im ), max( cutoff, cutoff2 ), order ) %>%
+    low = fft_lowpass_kernel(
+      kernel, im_height( im ), im_width( im ), max( cutoff, cutoff2 ), order ) %>%
       im_rep( im_nc( im ) )
-    high = 1 - fft_lowpass_kernel( kernel, im_height( im ), im_width( im ), min( cutoff, cutoff2 ), order ) %>%
+    high = 1 - fft_lowpass_kernel(
+      kernel, im_height( im ), im_width( im ), min( cutoff, cutoff2 ), order ) %>%
       im_rep( im_nc( im ) )
     fft_mask = pmin( low, high )
   }
@@ -1967,7 +2302,7 @@ fft_filter = function( im, xpass, kernel = "ideal", cutoff, cutoff2, order = 4 )
 #' @param im an image
 #' @return an image
 #' @examples
-#' pplot(fft_phase_scramble(regatta))
+#' plot(fft_phase_scramble(regatta))
 #' @export
 fft_phase_scramble = function( im ){
   if( im_nc( im ) >= 3 ){
@@ -2004,8 +2339,10 @@ fft_phase_scramble = function( im ){
   } else if( im_height( im ) %% 2 == 0 & im_width( im ) %% 2 == 0 ){ # even, even
     p[ 2:(cy-1), 1 ] = -p[ h:(cy+1), 1 ]
     p[ 1, 2:(cx-1) ] = -p[ 1, w:(cx+1) ]
-    p[ 2:(cy-1), 2:(cx-1) ] = -array( rev( p[ (cy+1):h, (cx+1):w ] ), dim = dim( p[ 2:(cy-1), 2:(cx-1) ] ) )
-    p[ (cy+1):h, 2:(cx-1) ] = -array( rev( p[ 2:(cy-1), (cx+1):w ] ), dim = dim( p[ (cy+1):h, 2:(cx-1) ] ) )
+    p[ 2:(cy-1), 2:(cx-1) ] = -array( rev( p[ (cy+1):h, (cx+1):w ] ),
+                                      dim = dim( p[ 2:(cy-1), 2:(cx-1) ] ) )
+    p[ (cy+1):h, 2:(cx-1) ] = -array( rev( p[ 2:(cy-1), (cx+1):w ] ),
+                                      dim = dim( p[ (cy+1):h, 2:(cx-1) ] ) )
   }
   dim( p ) = c( dim( p ), 1 )
   im2 = Re( stats::fft( A * exp( 1i * p ), inverse = T ) ) %>% clamping
@@ -2022,7 +2359,7 @@ fft_phase_scramble = function( im ){
 #' @return an image
 #' @examples
 #' amp = fft_amplitude(im_gray(regatta), modify = TRUE)
-#' pplot(amp)
+#' plot(amp)
 #' @export
 fft_amplitude = function( im, modify = FALSE, dc_value ){
   if( is.list( im ) ){
@@ -2054,7 +2391,7 @@ fft_amplitude = function( im, modify = FALSE, dc_value ){
 #' @return an image
 #' @examples
 #' phase = fft_phase(im_gray(regatta))
-#' pplot(phase, rescale = TRUE)
+#' plot(phase, rescale = TRUE)
 #' @export
 fft_phase = function( im ){
   imf = for_fft( im )
@@ -2068,8 +2405,8 @@ fft_phase = function( im ){
 #' @return an image
 #' @examples
 #' img = fft_spectrum(im_gray(regatta), modify = TRUE)
-#' pplot(img$magnitude)
-#' pplot(img$phase, rescale = TRUE)
+#' plot(img$magnitude)
+#' plot(img$phase, rescale = TRUE)
 #' @export
 fft_spectrum = function( im, modify = FALSE ){
   if( is.list( im ) ){
@@ -2081,7 +2418,8 @@ fft_spectrum = function( im, modify = FALSE ){
   imf = for_fft( im )
   if( modify ){
     return( list(
-      magnitude = abs( imf ) %>% + max( .Machine$double.eps, min( . ) ) %>% log %>% rescaling01 %>% .^2,
+      magnitude = abs( imf ) %>%
+        + max( .Machine$double.eps, min( . ) ) %>% log %>% rescaling01 %>% .^2,
       phase = atan2( Im( imf ), Re( imf ) ) )
     )
   } else {
@@ -2120,7 +2458,7 @@ fft_angular_mask = function( height, width, orientation = 0, angle = 0,
   } else if( orientation - angle < 0 || orientation + angle >= 2 * pi ){
     mask = A >= mod( orientation - angle, 2 * pi ) | A <= mod( orientation + angle, 2 * pi )
     orientation = orientation + pi
-    mask = mask | ( A >= mod( orientation - angle, 2 * pi ) & A <= mod( orientation + angle, 2 * pi ) )
+    mask = mask | ( A >= mod( orientation - angle, 2*pi ) & A <= mod( orientation + angle, 2 * pi ) )
   } else {
     mask = A >= mod( orientation - angle, 2 * pi ) & A <= mod( orientation + angle, 2 * pi )
     orientation = orientation + pi
@@ -2228,7 +2566,7 @@ fft_amplitude1D = function( im, step = 2, mask = F ){
 #     smooth = bs_apply_preset( im, "smooth" ),
 #     matte = bs_apply_preset( im, "matte" )
 #   )
-#   pplot(ims, layout.mat = matrix(1:6,nrow=2,ncol=3, T))
+#   plot(ims, layout.mat = matrix(1:6,nrow=2,ncol=3, T))
 #
 #   dat = data.frame()
 #   step = 3
@@ -2316,7 +2654,7 @@ fft_noise = function(){
   p = array( stats::runif( height * width, min = -pi, max = pi ), dim = c( height, width, 1 ) )
 
   im2 = Re( stats::fft( A * exp( 1i * p ), inverse = T ) ) %>% rescaling01 %>% nimg
-  # pplot(im2)
+  # plot(im2)
   fft_amplitude1D( im2, 2 ) %>% plot
 }
 
@@ -2344,7 +2682,7 @@ fft_transfer = function( from, to, element ){
 #' @param top an image
 #' @return an image
 #' @examples
-#' pplot(color_dodge(regatta, regatta^10))
+#' plot(color_dodge(regatta, regatta^10))
 #' @export
 color_dodge = function( bottom, top = bottom ){
   return( clamping( bottom / ( 1 - top ) ) )
@@ -2356,7 +2694,7 @@ color_dodge = function( bottom, top = bottom ){
 
 
 #' Visualize CIELAB image
-#' @param im an image
+#' @param im an RGB image
 #' @param scale either TRUE or FALSE (default)
 #' @return a list of images
 #' @export
@@ -2380,299 +2718,183 @@ CIELAB_visualize = function( im, scale = FALSE ){
 }
 
 
+visualize_contrast = function( im, abs.range = NULL, Lcenter = 55 ){
+  if( is.null( abs.range ) ){
+    abs.range = max( abs( im ) )
+  }
+  L = clamping( Lcenter + im * ( 100 - Lcenter ) / abs.range, 0, 100 )
+  ab = array( 0, dim = dim( L ) )
+  clamping( Lab2sRGB( merge_color( list( L, ab, ab ) ) ) )
+}
+
+
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# material editing ----
+# color transfer ----
 
 
-#' Scale-space decomposition by the guided filter
-#' @param im an image
-#' @param log_epsilon offset for log transformation
-#' @param filter_epsilon epsilon parameter
-#' @return an image
-#' @examples
-#' \donttest{
-#' im = gf_decompose(regatta)
-#' }
-#' @export
-gf_decompose = function( im, log_epsilon = 0.0001, filter_epsilon = 0.01 ){
-  if( im_nc( im ) == 2 || im_nc( im ) > 3 ){
-    warning( "The number of color channel must be either 1 or 3.")
-    return( NULL )
+RGB2LMS = function( im, sRGB = TRUE ){
+  if( sRGB ){
+    im = sRGB2RGB( im )
   }
-  if( im_nc( im ) == 3 ){
-    lab = sRGB2Lab( im )
-    dec = gf_decompose( get_channel( lab, 1 ) / 100 )
-    dec = c( dec, list( a = get_channel( lab, 2 ), b = get_channel( lab, 3 ) ) )
-    dec$n.color = 3
-    return( dec )
-  }
-
-  L = log( im + log_epsilon )
-
-  # L0 = L
-  # Lk = guided_filter( Lk-1, filter_epsilon, 2^k ) (k=1~n)
-  # Dk = Lk-1 - Lk
-  # recon = ∑(Dk)[k=1~n] + Ln
-  N = floor( log2( min( im_size( L ) ) ) )
-  L_k_minus_1 = guided_filter( L, 2^1, filter_epsilon ) # L1
-  D_k = L - L_k_minus_1 # D1
-  D = list( D_k )
-  for( k in 2:N ){
-    L_k = guided_filter( L_k_minus_1, 2^k, filter_epsilon )
-    D_k = L_k_minus_1 - L_k
-    D = c( D, list( D_k ) )
-    if( k == N ){
-      Low_residual = list( residual = L_k )
-      names( D ) = paste0( "D", sprintf( paste0( "%0", nchar( N ), "d" ), 1:N ) )
-    } else {
-      L_k_minus_1 = L_k
-    }
-  }
-
-  D = lapply( D, function( im ){
-    blur_range = 0.2
-    range_lo = 1 - blur_range
-    range_hi = 1 + blur_range
-    sigma = stats::sd( im )
-    hi =
-      im * cubic_spline( im, range_lo * sigma, range_hi * sigma ) +
-      im * cubic_spline( im, -range_lo * sigma, -range_hi * sigma )
-    lo =
-      im * pmin( cubic_spline( im, -range_hi * sigma, -range_lo * sigma ),
-                 cubic_spline( im, range_hi * sigma, range_lo * sigma ) )
-    hip = hi
-    hip[ hi < 0 ] = 0
-    hin = hi
-    hin[ hi > 0 ] = 0
-    lop = lo
-    lop[ lo < 0 ] = 0
-    lon = lo
-    lon[ lo > 0 ] = 0
-    return( list( highamp_posi = hip, highamp_nega = hin, lowamp_posi = lop, lowamp_nega = lon ) )
-  } )
-
-  dec = list(
-    size = im_size( im ),
-    depth = N,
-    n.color = 1,
-    log_epsilon = log_epsilon,
-    filter_epsilon = filter_epsilon,
-    L = c( D, Low_residual )
-    )
-  # dec = c( D, Low_residual )
-  return( dec )
+  L = 0.3811 * get_R( im ) + 0.5783 * get_G( im ) + 0.0402 * get_B( im )
+  M = 0.1967 * get_R( im ) + 0.7244 * get_G( im ) + 0.0782 * get_B( im )
+  S = 0.0241 * get_R( im ) + 0.1288 * get_G( im ) + 0.8444 * get_B( im )
+  return( merge_color( list( L, M, S ) ) )
 }
 
 
-#' Reconstruct the original image from decomposed data
-#' @param dec decomposed data
-#' @return an image
-#' @examples
-#' \donttest{
-#' im1 = regatta
-#' dec = gf_decompose(im1)
-#' im2 = gf_reconstruct(dec)
-#' im_diff(im1, im2) # small difference means successful reconstruction
-#' }
-#' @export
-gf_reconstruct = function( dec ){
-  recon = array( 0, c( dec$size, 1 ) )
-  for( i in 1:dec$depth ){
-    for( j in 1:4 ){
-      recon = recon + dec$L[[ i ]][[ j ]]
-    }
+LMS2RGB = function( im, sRGB = TRUE ){
+  R =  4.4679 * get_R( im ) - 3.5873 * get_G( im ) + 0.1193 * get_B( im )
+  G = -1.2186 * get_R( im ) + 2.3809 * get_G( im ) - 0.1624 * get_B( im )
+  B =  0.0497 * get_R( im ) - 0.2439 * get_G( im ) + 1.2045 * get_B( im )
+  im = merge_color( list( R, G, B ) )
+  if( sRGB ){
+    im = RGB2sRGB( im )
   }
-  recon = recon + dec$L$residual
-  recon = exp( recon ) - dec$log_epsilon
-
-  if( dec$n.color == 3 ){
-    recon = Lab2sRGB( merge_color( list( recon * 100, dec$a, dec$b ) ) )
-  }
-
-  return( recon )
+  return( im )
 }
 
 
-# face = im_load(
-#   paste0( "/Users/tsuhir/Dropbox/code/material/imageDB/Chicago Face Database/",
-#           "CFD Version 2.0.3/img/CFD-AF-237-223-N.jpg" ) ) %>%
-#   im_crop( c( 0, 422, 118, 422 ) ) %>% im_resize_limit( 512 )
-
-# oily   HH+ boost
-# matte  HH+ reduce
-# stain  HH- boost
-# smooth HH- reduce + [1HA, HL-] blur # smooth2
-# aging  HLA boost + HHN boost # aging2
-# glossy LAA boost
-# shadow LA- boost + blur
-
-# medit( face2, params = list(
-#   list( freq = "H", amp = "H", sign = "+", scale = .2 ),
-#   list( freq = "H", amp = "H", sign = "-", scale = .2 )
-#   ) ) %>% pplot
-
-#' Band-sift material editing
-#' @param im an image
-#' @param effect either "oily", "matte", "glossy", "stain", "shadow", "aging", "aging2", "smooth", or "smooth2"
-#' @param scale a scaling factor
-#' @param params a list. freq, amp, sign, scale
-#' @param log_epsilon offset for log transformation
-#' @param filter_epsilon epsilon parameter
-#' @return an image
-#' @examples
-#' \donttest{
-#' im = im_resize_scale(regatta, 0.6) # use a smaller image for speed
-#'
-#' pplot(medit(im, effect = "oily"))
-#' pplot(medit(im, effect = "oily", scale = 4))
-#'
-#' oily = list(freq = "H", amp = "H", sign = "+", scale = 2)
-#' pplot(medit(im, params = oily)) # oily effect
-#' smooth = list(freq = "H", amp = "H", sign = "-", scale = 0.25)
-#' pplot(medit(im, params = list(oily, smooth))) # oily and smooth effects
-#' }
-#' @export
-medit = function( im, effect, scale, params, log_epsilon = 0.0001, filter_epsilon = 0.01 ){
-  if( im_nc( im ) == 3 ){
-    lab = sRGB2Lab( im )
-    bs = medit( get_channel( lab, 1 ) / 100, effect, scale, params, log_epsilon, filter_epsilon )
-    return( clamping( Lab2sRGB( merge_color( list( bs * 100, get_G( lab ), get_B( lab ) ) ) ) ) )
-  } else {
-    dec = gf_decompose( get_L( im ), log_epsilon, filter_epsilon )
-  }
-
-  if( ! missing( effect ) ){
-    params = medit_preset_params( effect, scale )
-  }
-
-  if( class( params[[ 1 ]] ) == "list" ){
-    for( i in 1:length( params ) ){
-      dec = medit_edit_dec( dec, medit_convert_params( params[[ i ]], dec$depth ) )
-    }
-  } else {
-    params = medit_convert_params( params, dec$depth )
-    dec = medit_edit_dec( dec, params )
-  }
-
-  rec = clamping( gf_reconstruct( dec ) )
-  return( rec )
+LMS2lab = function( im, epsilon = 0.0001 ){
+  im = log10( im + epsilon )
+  l = 1/sqrt(3) * get_R( im ) + 1/sqrt(3) * get_G( im ) + 1/sqrt(3) * get_B( im )
+  a = 1/sqrt(6) * get_R( im ) + 1/sqrt(6) * get_G( im ) - 2/sqrt(6) * get_B( im )
+  b = 1/sqrt(2) * get_R( im ) - 1/sqrt(2) * get_G( im )
+  return( merge_color( list( l, a, b ) ) )
 }
 
 
-medit_preset_params = function( effect, scale ){
-  params = list()
-  params$effect = effect
-  # scale
-  if( missing( scale ) ){
-    if( effect %in% c( "matte", "smooth", "smooth2" ) ){
-      params$scale = 0.25
-    } else if( effect %in% c( "oily" ) ){
-      params$scale = 2
-    } else if( effect %in% c( "stain", "aging", "aging2", "glossy" ) ){
-      params$scale = 2.5
-    } else if( effect %in% c( "shadow" ) ){
-      params$scale = 8
-    }
-  } else {
-    params$scale = scale
-  }
-  # freq
-  if( effect %in% c( "oily", "matte", "stain", "aging", "smooth", "aging2", "smooth2" ) ){
-    params$freq = "H"
-  } else if( effect %in% c( "glossy", "shadow" ) ){
-    params$freq = "L"
-  }
-  # amp
-  if( effect %in% c( "oily", "matte", "stain", "smooth", "smooth2" ) ){
-    params$amp = "H"
-  } else if( effect %in% c( "aging", "aging2" ) ){
-    params$amp = "L"
-  } else if( effect %in% c( "glossy", "shadow" ) ){
-    params$amp = "A"
-  }
-  # sign
-  if( effect %in% c( "oily", "matte" ) ){
-    params$sign = "+"
-  } else if( effect %in% c( "stain", "shadow", "smooth", "smooth2" ) ){
-    params$sign = "-"
-  } else if( effect %in% c( "aging", "aging2", "glossy" ) ){
-    params$sign = "A"
-  }
-  return( params )
+lab2LMS = function( im, epsilon = 0.0001 ){
+  L = sqrt(3)/3 * get_R( im ) + sqrt(6)/6 * get_G( im ) + sqrt(2)/2 * get_B( im )
+  M = sqrt(3)/3 * get_R( im ) + sqrt(6)/6 * get_G( im ) - sqrt(2)/2 * get_B( im )
+  S = sqrt(3)/3 * get_R( im ) - sqrt(6)/3 * get_G( im )
+  L = 10^L - epsilon
+  M = 10^M - epsilon
+  S = 10^S - epsilon
+  return( merge_color( list( L, M, S ) ) )
 }
 
 
-medit_convert_params = function( params, depth ){
-  if( is.character( params$freq ) ){
-    if( params$freq == "A" ){
-      params$freq = 1:depth
-    } else if( params$freq == "H" ){
-      params$freq = 1:floor( depth / 2 )
-    } else if( params$freq == "L" ){
-      params$freq = ( floor( depth / 2 ) + 1 ):depth
-    }
-  }
-  if( params$amp == "A" ){
-    amp = c( 1, 1, 1, 1 )
-  } else if( params$amp == "H" ){
-    amp = c( 1, 1, 0, 0 )
+color_transfer = function( im, ref, sRGB = TRUE ){
+  if( is.list( ref ) ){
+    Reinhard_multiple( im, ref, sRGB )
   } else {
-    amp = c( 0, 0, 1, 1 )
+    Reinhard_single( im, ref, sRGB )
   }
-  if( params$sign == "A" ){
-    sign = c( 1, 1, 1, 1 )
-  } else if( params$sign == "+" ){
-    sign = c( 1, 0, 1, 0 )
-  } else {
-    sign = c( 0, 1, 0, 1 )
-  }
-  params$ind = which( amp & sign )
-  return( params )
 }
 
 
-medit_edit_dec = function( dec, params ){
-  if( ! is.null( params$effect ) ){
-    if( params$effect == "aging2" ){
-      for( f in params$freq ){
-        dec$L[[ f ]][[ 3 ]] = dec$L[[ f ]][[ 3 ]] * params$scale * 0.8
-        dec$L[[ f ]][[ 4 ]] = dec$L[[ f ]][[ 4 ]] * params$scale
-        if( f != 1 ){
-          dec$L[[ f ]][[ 2 ]] = dec$L[[ f ]][[ 2 ]] * params$scale * 0.7 # dark spots
-        }
-      }
-    } else if( params$effect == "shadow" ){
-      for( f in params$freq ){
-        for( i in params$ind ){
-          dec$L[[ f ]][[ i ]] = im_conv( dec$L[[ f ]][[ i ]] * params$scale, gauss_kernel( i - 1 ) )
-        }
-      }
-    } else if( params$effect == "smooth2" ){
-      for( f in params$freq ){
-        dec$L[[ f ]][[ 2 ]] = dec$L[[ f ]][[ 2 ]] * params$scale # original
-        # blur
-        blur_radius = min( min( dec$size ), round( -5 * log( abs( params$scale ) ) ) )
-        dec$L[[ f ]][[ 4 ]] = box_blur( dec$L[[ f ]][[ 4 ]], blur_radius )
-        if( f == 1 ){
-          dec$L[[ 1 ]][[ 1 ]] = box_blur( dec$L[[ 1 ]][[ 1 ]], 1 )
-          dec$L[[ 1 ]][[ 2 ]] = box_blur( dec$L[[ 1 ]][[ 2 ]], 1 )
-        }
-      }
-    } else {
-      for( f in params$freq ){
-        for( i in params$ind ){
-          dec$L[[ f ]][[ i ]] = dec$L[[ f ]][[ i ]] * params$scale
-        }
-      }
-    }
-  } else {
-    for( f in params$freq ){
-      for( i in params$ind ){
-        dec$L[[ f ]][[ i ]] = dec$L[[ f ]][[ i ]] * params$scale
-      }
-    }
+color_transfer_example = function(){
+  # im = im_load( "/Users/tsuhir/Dropbox/code/material/img/_天気の子/tabata1.jpg" ) %>%
+  #   im_resize_limit( 1280 )
+  # ref = im_load( "/Users/tsuhir/Dropbox/code/material/img/_天気の子/tabata2.jpg" ) %>%
+  #   im_resize_limit( 1280 )
+  # color_transfer( im, ref ) %>% plot
+
+  # im = regatta
+  # ref = im_load("/Users/tsuhir/Dropbox/code/material/img/scene1.jpg")
+  # plot( color_transfer( im, ref ) )
+  # plot( color_transfer(
+  #   regatta,
+  #   im_load("/Users/tsuhir/Dropbox/code/material/img/ct_t.jpg") ) )
+  # plot( color_transfer(
+  #   im_load("/Users/tsuhir/Dropbox/code/Python/face_landmark/CFD_landmarks_img/CFD-AF-212-097-N.png"),
+  #   im_load("/Users/tsuhir/Dropbox/code/Python/face_landmark/CFD_landmarks_img/CFD-AM-208-143-N.png") ) )
+  # plot( im_load("/Users/tsuhir/Dropbox/code/material/img/ct_t2.jpg") )
+  # im_diff( out, im_load("/Users/tsuhir/Dropbox/code/material/img/ct_t2.jpg") )
+
+  # plot( color_transfer( regatta, ref[[2]] ) )
+  # im = im_load( "/Users/tsuhir/Dropbox/code/material/img/ct_t.jpg" )
+  # ref = list(
+  #   im_load( "/Users/tsuhir/Dropbox/code/material/img/scene2.jpg" ),
+  #   im_load( "/Users/tsuhir/Dropbox/code/material/img/scene3.jpg" )
+  # )
+  # plot( color_transfer2( im, ref[[1]] ) )
+
+  # im = im_load( "/Users/tsuhir/Dropbox/code/material/img/nyc6.jpg" )
+  # ref = list(
+  #   im_load( "/Users/tsuhir/Dropbox/code/material/img/nyc7.jpg" ),
+  #   im_load( "/Users/tsuhir/Dropbox/code/material/img/scene3.jpg" )
+  # )
+  # plot( color_transfer( im, ref ) )
+  # plot( color_transfer( im, im_load( "/Users/tsuhir/Dropbox/code/material/img/gogh.jpg" ) ) )
+  # plot( color_transfer( im, regatta ) )
+  # plot( color_transfer( im_load( "/Users/tsuhir/Dropbox/code/material/img/joker.jpg" ), regatta ) )
+  # plot( color_transfer(
+  #   im_load( "/Users/tsuhir/Dropbox/code/material/img/cafe3.jpg" ),
+  #   im_load( "/Users/tsuhir/Dropbox/code/material/img/starry.jpg" ) ) ) %>%
+  #   im_save("nyc6tostarry", path = getwd() )
+}
+
+
+Reinhard_single = function( im, ref, sRGB = TRUE, out.lab = FALSE ){
+  im = im_tricolored( im )
+  ref = im_tricolored( ref )
+
+  lab_s = LMS2lab( RGB2LMS( im, sRGB ) )
+  lab_t = LMS2lab( RGB2LMS( ref, sRGB ) )
+  mmt_s = im_moments( lab_s, channel = 1:3, order = 1:2, space = "RGB", max_size = 1024 )
+  mmt_t = im_moments( lab_t, channel = 1:3, order = 1:2, space = "RGB", max_size = 1024 )
+
+  l = get_channel( lab_s, 1 )
+  a = get_channel( lab_s, 2 )
+  b = get_channel( lab_s, 3 )
+  l = l - mean( l )
+  a = a - mean( a )
+  b = b - mean( b )
+  l = mmt_t$value[ 2 ] / mmt_s$value[ 2 ] * l + mmt_t$value[ 1 ]
+  a = mmt_t$value[ 4 ] / mmt_s$value[ 4 ] * a + mmt_t$value[ 3 ]
+  b = mmt_t$value[ 6 ] / mmt_s$value[ 6 ] * b + mmt_t$value[ 5 ]
+  lab = merge_color( list( l, a, b ) )
+  if( out.lab ){
+    return( lab )
   }
-  return( dec )
+  out = LMS2RGB( lab2LMS( lab ), sRGB )
+  out = clamping( out )
+  return( out )
+}
+
+
+Reinhard_multiple = function( im, ref, sRGB = TRUE ){
+  im = im_tricolored( im )
+  ref = lapply( ref, im_tricolored )
+
+  lab_s = LMS2lab( RGB2LMS( im, sRGB ) )
+  lab_t = lapply( ref, RGB2LMS, sRGB )
+  lab_t = lapply( lab_t, LMS2lab )
+  mmt_t = lapply( lab_t, im_moments, 1:3, 1:2, "RGB", 1024 )
+
+  trans = list()
+  for( i in 1:length( ref ) ){
+    trans = c( trans, list( Reinhard_single( im, ref[[ i ]], sRGB, out.lab = TRUE) ) )
+  }
+
+  # distance
+  weight = list()
+  w_sum = 0
+  for( i in 1:length( ref ) ){
+    means = array(
+      c( rep( mmt_t[[ i ]]$value[ 1 ], prod( im_size( im ) ) ),
+         rep( mmt_t[[ i ]]$value[ 3 ], prod( im_size( im ) ) ),
+         rep( mmt_t[[ i ]]$value[ 5 ], prod( im_size( im ) ) ) ),
+      dim = dim( im ) )
+    SDs = array(
+      c( rep( mmt_t[[ i ]]$value[ 2 ], prod( im_size( im ) ) ),
+         rep( mmt_t[[ i ]]$value[ 4 ], prod( im_size( im ) ) ),
+         rep( mmt_t[[ i ]]$value[ 6 ], prod( im_size( im ) ) ) ),
+      dim = dim( im ) )
+    distance = abs( lab_s - means ) / SDs
+    weight = c( weight, list( 1 / distance ) )
+    w_sum = w_sum + 1 / distance
+  }
+
+  out = 0
+  for( i in 1:length( ref ) ){
+    out = out + weight[[ i ]] / w_sum * trans[[ i ]]
+  }
+  out = LMS2RGB( lab2LMS( out ), sRGB )
+  out = clamping( out )
+  return( out )
 }
 
 
@@ -2690,7 +2912,7 @@ medit_edit_dec = function( dec, params ){
 #' @param rmax maximum diameter of each leaf
 #' @return an image
 #' @examples
-#' pplot(create_dead_leaves(128))
+#' plot(create_dead_leaves(128))
 #' @export
 create_dead_leaves = function( height, width = height, shape = "square", grayscale = FALSE,
                                sigma_n = 2, rmin = 0.02, rmax = 0.5 ){

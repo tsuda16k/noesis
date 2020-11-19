@@ -18,5 +18,5 @@ an image
 Get L channel of CIELAB color space
 }
 \examples{
-pplot(get_L(regatta))
+plot(get_L(regatta))
 }

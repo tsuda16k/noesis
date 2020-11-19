@@ -36,5 +36,5 @@ an image
 Create a 'dead-leaves' image
 }
 \examples{
-pplot(create_dead_leaves(128))
+plot(create_dead_leaves(128))
 }

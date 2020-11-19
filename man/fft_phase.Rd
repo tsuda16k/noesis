@@ -17,5 +17,5 @@ Calculate fft phase
 }
 \examples{
 phase = fft_phase(im_gray(regatta))
-pplot(phase, rescale = TRUE)
+plot(phase, rescale = TRUE)
 }

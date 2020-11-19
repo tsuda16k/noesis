@@ -18,5 +18,5 @@ an image
 Convert to grayscale
 }
 \examples{
-pplot(im_gray(regatta))
+plot(im_gray(regatta))
 }

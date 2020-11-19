@@ -19,6 +19,6 @@ Calculate fft amplitude and phase
 }
 \examples{
 img = fft_spectrum(im_gray(regatta), modify = TRUE)
-pplot(img$magnitude)
-pplot(img$phase, rescale = TRUE)
+plot(img$magnitude)
+plot(img$phase, rescale = TRUE)
 }

@@ -26,8 +26,8 @@ an image
 Combine images
 }
 \examples{
-pplot(im_combine(regatta, regatta, y = im_height(regatta)))
-pplot(im_combine(regatta, regatta, y = 100, x = 200))
-pplot(im_combine(regatta, regatta, y = 100, x = 200, background = 0.5))
-pplot(im_combine(regatta, regatta, y = 100, x = 200, background = c(1, 0.5, 0.5)))
+plot(im_combine(regatta, regatta, y = im_height(regatta)))
+plot(im_combine(regatta, regatta, y = 100, x = 200))
+plot(im_combine(regatta, regatta, y = 100, x = 200, background = 0.5))
+plot(im_combine(regatta, regatta, y = 100, x = 200, background = c(1, 0.5, 0.5)))
 }

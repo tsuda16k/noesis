@@ -37,7 +37,7 @@ Create a gabor filter kernel
 }
 \examples{
 gb = gabor_kernel( ksize = 61 )
-pplot(gb, rescale = TRUE)
+plot(gb, rescale = TRUE)
 gb = gabor_kernel( ksize = 61, theta = pi/6 )
-pplot(gb, rescale = TRUE)
+plot(gb, rescale = TRUE)
 }
